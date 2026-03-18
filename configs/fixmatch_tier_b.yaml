@@ -1,4 +1,9 @@
-# FixMatch Tier A configuration - quick improvements based on analysis
+# FixMatch Tier B configuration - adaptive thresholds & enhanced regularization
+# Builds on Tier A with distribution alignment, now adding:
+# - Adaptive confidence threshold (0.70 → 0.90 over training)
+# - Increased weight decay for stronger regularization
+# - Label smoothing to reduce overconfidence
+# - Gradient accumulation for VRAM safety
 # All parameters are actively read by the training pipeline.
 
 # Dataset
@@ -20,10 +25,11 @@ model:
 # Training (optimized for SSL with limited labels)
 training:
   batch_size: 8
-  gradient_accumulation_steps: 1  # accumulate gradients over N steps (effective batch size = batch_size * gradient_accumulation_steps)
+  gradient_accumulation_steps: 2  # accumulate gradients over 2 steps (effective batch size = 16)
   num_epochs: 150          # more epochs for pseudo-label stabilization
   learning_rate: 0.0003    # lower than supervised (was 0.001)
-  weight_decay: 0.0001
+  weight_decay: 0.001      # increased regularization (was 0.0001)
+  label_smoothing: 0.1     # reduce overconfidence in supervised loss
   momentum: 0.9  # for SGD only
   optimizer: "adam"  # adam, adamw, sgd
   scheduler: "cosine"  # cosine, step, plateau, null
@@ -35,19 +41,27 @@ training:
   max_grad_norm: 1.0
   class_weighted_loss: true  # inverse-frequency class weighting
 
-# SSL (FixMatch) - Tier A optimized parameters
+# SSL (FixMatch) - Tier B optimized parameters
 ssl:
   method: "fixmatch"
-  confidence_threshold: 0.70  # even lower threshold for earlier pseudo-labels (was 0.80)
+  # Adaptive confidence threshold
+  confidence_threshold: 0.70  # base/fallback (same as start)
+  confidence_threshold_start: 0.70  # start low for early pseudo-labels
+  confidence_threshold_end: 0.90    # increase to high for later training
+  confidence_threshold_ramp_epochs: 40  # ramp over 40 epochs
+  
   lambda_u: 0.5  # base weight for unsupervised loss
   lambda_u_start: 0.1  # start value for linear ramp
   lambda_u_end: 0.5    # end value for linear ramp  
   lambda_u_ramp_epochs: 20  # ramp over 20 epochs
+  
   unlabeled_batch_ratio: 2    # mu: reduced from 7 to save VRAM (~3GB vs ~7GB)
   randaugment_n: 2  # RandAugment: number of transforms
   randaugment_m: 10  # RandAugment: magnitude (0-30)
+  
   use_ema: true  # exponential moving average for pseudo-labels
   ema_decay: 0.999  # EMA decay rate
+  
   distribution_alignment: true  # align pseudo-label distribution with labeled distribution
   temperature_smoothing: 0.01  # smoothing epsilon for temperature scaling
 

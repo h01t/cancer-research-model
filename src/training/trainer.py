@@ -122,9 +122,7 @@ class BaseTrainer:
                     self.optimizer, T_max=max(1, self.num_epochs - self.warmup_epochs)
                 )
             elif scheduler_name == "step":
-                self.scheduler = optim.lr_scheduler.StepLR(
-                    self.optimizer, step_size=30, gamma=0.1
-                )
+                self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=30, gamma=0.1)
             elif scheduler_name == "plateau":
                 self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
                     self.optimizer, mode="max", patience=5, factor=0.5
@@ -132,13 +130,20 @@ class BaseTrainer:
             else:
                 self.scheduler = None
 
-        # Loss function (with optional class weights)
+        # Loss function (with optional class weights + label smoothing)
+        label_smoothing = train_cfg.get("label_smoothing", 0.0)
         if class_weights is not None:
             class_weights = class_weights.to(self.device)
-            self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-            logger.info(f"Using class-weighted loss: {class_weights.tolist()}")
+            self.criterion = nn.CrossEntropyLoss(
+                weight=class_weights, label_smoothing=label_smoothing
+            )
+            logger.info(
+                f"Using class-weighted loss: {class_weights.tolist()}, label_smoothing={label_smoothing}"
+            )
         else:
-            self.criterion = nn.CrossEntropyLoss()
+            self.criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+            if label_smoothing > 0:
+                logger.info(f"Using label smoothing: {label_smoothing}")
 
         # Logging
         log_cfg = config.get("logging", {})
@@ -230,9 +235,7 @@ class BaseTrainer:
 
             # Forward pass with optional AMP
             if self.use_amp:
-                with torch.amp.autocast(
-                    device_type=self.device.type, dtype=self.amp_dtype
-                ):
+                with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                     outputs = self.model(data)
                     loss = self.criterion(outputs, targets)
             else:
@@ -244,17 +247,13 @@ class BaseTrainer:
                 self.scaler.scale(loss).backward()
                 if self.use_grad_clip:
                     self.scaler.unscale_(self.optimizer)
-                    nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.max_grad_norm
-                    )
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
                 loss.backward()
                 if self.use_grad_clip:
-                    nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.max_grad_norm
-                    )
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
             total_loss += loss.item()
@@ -272,9 +271,7 @@ class BaseTrainer:
                 pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         epoch_loss = total_loss / max(len(train_loader), 1)
-        metrics = compute_metrics(
-            np.array(all_labels), np.array(all_preds), np.array(all_probs)
-        )
+        metrics = compute_metrics(np.array(all_labels), np.array(all_preds), np.array(all_probs))
 
         return epoch_loss, metrics
 
@@ -292,9 +289,7 @@ class BaseTrainer:
                 targets = targets.to(self.device)
 
                 if self.use_amp:
-                    with torch.amp.autocast(
-                        device_type=self.device.type, dtype=self.amp_dtype
-                    ):
+                    with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                         outputs = self.model(data)
                         loss = self.criterion(outputs, targets)
                 else:
@@ -311,9 +306,7 @@ class BaseTrainer:
                 all_probs.extend(probs[:, 1].cpu().numpy())
 
         epoch_loss = total_loss / max(len(val_loader), 1)
-        metrics = compute_metrics(
-            np.array(all_labels), np.array(all_preds), np.array(all_probs)
-        )
+        metrics = compute_metrics(np.array(all_labels), np.array(all_preds), np.array(all_probs))
 
         return epoch_loss, metrics
 
@@ -411,9 +404,7 @@ class BaseTrainer:
                 "epoch": epoch,
                 "model_state_dict": self.model.state_dict(),
                 "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": (
-                    self.scheduler.state_dict() if self.scheduler else None
-                ),
+                "scheduler_state_dict": (self.scheduler.state_dict() if self.scheduler else None),
                 "auc": auc,
                 "best_val_auc": self.best_val_auc,
                 "history": self.history,

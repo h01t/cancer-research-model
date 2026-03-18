@@ -46,7 +46,27 @@ class FixMatchTrainer(BaseTrainer):
 
         # SSL parameters
         ssl_config = config["ssl"]
-        self.confidence_threshold = ssl_config["confidence_threshold"]
+
+        # Confidence threshold (adaptive or static)
+        self.confidence_threshold = ssl_config["confidence_threshold"]  # base/fallback
+        self.confidence_threshold_start = ssl_config.get(
+            "confidence_threshold_start", self.confidence_threshold
+        )
+        self.confidence_threshold_end = ssl_config.get(
+            "confidence_threshold_end", self.confidence_threshold
+        )
+        self.confidence_threshold_ramp_epochs = ssl_config.get(
+            "confidence_threshold_ramp_epochs", 0
+        )
+        self.current_confidence_threshold = self.confidence_threshold
+
+        if self.confidence_threshold_ramp_epochs > 0:
+            logger.info(
+                f"Confidence threshold scheduling: {self.confidence_threshold_start} → {self.confidence_threshold_end} "
+                f"over {self.confidence_threshold_ramp_epochs} epochs"
+            )
+        else:
+            logger.info(f"Confidence threshold static: {self.confidence_threshold}")
 
         # Lambda_u scheduling (dynamic or static)
         self.lambda_u = ssl_config["lambda_u"]  # base/default value
@@ -64,6 +84,34 @@ class FixMatchTrainer(BaseTrainer):
 
         # Current lambda_u (updated each epoch)
         self.current_lambda_u = self.lambda_u
+
+        # Gradient accumulation (memory efficiency)
+        training_config = config["training"]
+        self.gradient_accumulation_steps = training_config.get("gradient_accumulation_steps", 1)
+        if self.gradient_accumulation_steps > 1:
+            effective_batch = training_config["batch_size"] * self.gradient_accumulation_steps
+            logger.info(
+                f"Gradient accumulation: {self.gradient_accumulation_steps} steps "
+                f"(effective batch size: {effective_batch})"
+            )
+
+        # Distribution alignment for pseudo-labels
+        self.distribution_alignment = ssl_config.get("distribution_alignment", True)
+        self.temperature_smoothing = ssl_config.get("temperature_smoothing", 0.01)
+        self.labeled_class_distribution = None  # π_labeled (stored on CPU)
+        num_classes = config["model"]["num_classes"]
+        # Initialize π_pseudo as uniform distribution on CPU (memory efficient)
+        self.pseudo_label_distribution = (
+            torch.ones(num_classes, dtype=torch.float32, device="cpu") / num_classes
+        )
+        self.current_temperatures = (
+            None  # T = sqrt(π_pseudo / π_labeled), stored on device when computed
+        )
+
+        if self.distribution_alignment:
+            logger.info(
+                f"Distribution alignment enabled for pseudo-labels (num_classes={num_classes})"
+            )
 
         # EMA model for pseudo-label generation
         self.use_ema = ssl_config.get("use_ema", True)
@@ -98,6 +146,63 @@ class FixMatchTrainer(BaseTrainer):
         progress = epoch / self.lambda_u_ramp_epochs
         return self.lambda_u_start + progress * (self.lambda_u_end - self.lambda_u_start)
 
+    def _get_current_confidence_threshold(self, epoch: int) -> float:
+        """Compute current confidence threshold based on scheduling."""
+        if (
+            self.confidence_threshold_ramp_epochs <= 0
+            or epoch >= self.confidence_threshold_ramp_epochs
+        ):
+            return self.confidence_threshold_end
+        # Linear ramp from start to end
+        progress = epoch / self.confidence_threshold_ramp_epochs
+        return self.confidence_threshold_start + progress * (
+            self.confidence_threshold_end - self.confidence_threshold_start
+        )
+
+    def _compute_labeled_class_distribution(self, labeled_loader: DataLoader) -> None:
+        """Compute π_labeled from the labeled dataset (stored on CPU)."""
+        class_counts = torch.zeros(
+            self.config["model"]["num_classes"], dtype=torch.float32, device=self.device
+        )
+        total = 0
+        self.model.eval()
+        with torch.no_grad():
+            for images, labels in labeled_loader:
+                labels = labels.to(self.device)
+                for cls_idx in range(self.config["model"]["num_classes"]):
+                    class_counts[cls_idx] += (labels == cls_idx).sum()
+                total += labels.shape[0]
+        self.labeled_class_distribution = (class_counts / total).cpu()
+        logger.info(
+            f"Labeled class distribution π_labeled: {self.labeled_class_distribution.numpy()}"
+        )
+
+    def _update_pseudo_label_distribution(self, pseudo_labels: torch.Tensor) -> None:
+        """Update π_pseudo with exponential moving average across epochs (CPU)."""
+        if pseudo_labels.dim() == 0 or pseudo_labels.numel() == 0:
+            return
+        # Move to CPU for memory efficiency (small integer tensor)
+        pseudo_labels_cpu = pseudo_labels.cpu()
+        num_classes = self.config["model"]["num_classes"]
+        # Compute class distribution using bincount (fast)
+        counts = torch.bincount(pseudo_labels_cpu, minlength=num_classes).float()
+        current_dist = counts / pseudo_labels_cpu.numel()
+        # EMA update (alpha = 0.9)
+        alpha = 0.9
+        self.pseudo_label_distribution = (
+            alpha * self.pseudo_label_distribution + (1 - alpha) * current_dist
+        )
+        self._compute_temperatures()
+
+    def _compute_temperatures(self) -> None:
+        """Compute temperature scaling T = sqrt(π_pseudo / π_labeled) with smoothing."""
+        if self.labeled_class_distribution is None or self.pseudo_label_distribution is None:
+            return
+        eps = self.temperature_smoothing
+        ratio = (self.pseudo_label_distribution + eps) / (self.labeled_class_distribution + eps)
+        self.current_temperatures = torch.sqrt(ratio).to(self.device)
+        logger.debug(f"Temperature scaling T: {self.current_temperatures.cpu().numpy()}")
+
     def train_epoch_ssl(
         self,
         labeled_loader: DataLoader,
@@ -120,12 +225,16 @@ class FixMatchTrainer(BaseTrainer):
         all_preds = []
         all_labels = []
         all_probs = []
+        all_pseudo_labels = []  # for distribution alignment
 
         labeled_iter = iter(labeled_loader)
         unlabeled_iter = iter(unlabeled_loader)
 
         # Number of batches per epoch (driven by labeled loader)
         num_batches = len(labeled_loader)
+
+        # Gradient accumulation state
+        accumulation_step = 0
 
         pbar = tqdm(range(num_batches), desc="Training (FixMatch)", leave=False)
         for batch_idx in pbar:
@@ -149,49 +258,82 @@ class FixMatchTrainer(BaseTrainer):
             unlabeled_weak = unlabeled_weak.to(self.device)
             unlabeled_strong = unlabeled_strong.to(self.device)
 
-            self.optimizer.zero_grad()
+            # Gradient accumulation: zero gradients only at start of accumulation cycle
+            if accumulation_step == 0:
+                self.optimizer.zero_grad()
 
             # --- Forward pass with optional AMP ---
             if self.use_amp:
                 with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                    loss, sup_loss, unsup_loss, mask_ratio, logits_labeled = (
-                        self._compute_fixmatch_loss(
-                            labeled_data,
-                            labeled_targets,
-                            unlabeled_weak,
-                            unlabeled_strong,
-                        )
-                    )
-            else:
-                loss, sup_loss, unsup_loss, mask_ratio, logits_labeled = (
-                    self._compute_fixmatch_loss(
+                    (
+                        loss_raw,
+                        sup_loss,
+                        unsup_loss,
+                        mask_ratio,
+                        logits_labeled,
+                        batch_pseudo_labels,
+                        batch_confidence_mask,
+                    ) = self._compute_fixmatch_loss(
                         labeled_data,
                         labeled_targets,
                         unlabeled_weak,
                         unlabeled_strong,
                     )
+            else:
+                (
+                    loss_raw,
+                    sup_loss,
+                    unsup_loss,
+                    mask_ratio,
+                    logits_labeled,
+                    batch_pseudo_labels,
+                    batch_confidence_mask,
+                ) = self._compute_fixmatch_loss(
+                    labeled_data,
+                    labeled_targets,
+                    unlabeled_weak,
+                    unlabeled_strong,
                 )
 
-            # Backward pass
+            # Scale loss for gradient accumulation
+            loss_for_backward = loss_raw / self.gradient_accumulation_steps
+
+            # Collect pseudo-labels for distribution alignment (only confident ones)
+            if self.distribution_alignment:
+                masked_pseudo = batch_pseudo_labels[batch_confidence_mask.bool()]
+                if masked_pseudo.numel() > 0:
+                    all_pseudo_labels.append(masked_pseudo)
+
+            # Backward pass with scaled loss
             if self.scaler is not None:
-                self.scaler.scale(loss).backward()
-                if self.use_grad_clip:
-                    self.scaler.unscale_(self.optimizer)
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                self.scaler.scale(loss_for_backward).backward()
             else:
-                loss.backward()
-                if self.use_grad_clip:
-                    nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
-                self.optimizer.step()
+                loss_for_backward.backward()
+
+            accumulation_step += 1
+
+            # Perform optimizer step if accumulation cycle complete
+            if accumulation_step == self.gradient_accumulation_steps:
+                if self.scaler is not None:
+                    if self.use_grad_clip:
+                        self.scaler.unscale_(self.optimizer)
+                        nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    if self.use_grad_clip:
+                        nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                    self.optimizer.step()
+                accumulation_step = 0
+
+            # Track losses (use raw loss, not scaled)
+            total_loss += loss_raw.item()
 
             # Update EMA
             if self.ema is not None:
                 self.ema.update(self.model)
 
             # Track losses
-            total_loss += loss.item()
             total_sup_loss += sup_loss.item()
             total_unsup_loss += unsup_loss.item()
             total_mask_ratio += mask_ratio
@@ -208,7 +350,7 @@ class FixMatchTrainer(BaseTrainer):
             if batch_idx % self.log_freq == 0:
                 pbar.set_postfix(
                     {
-                        "loss": f"{loss.item():.4f}",
+                        "loss": f"{loss_raw.item():.4f}",
                         "sup": f"{sup_loss.item():.4f}",
                         "unsup": f"{unsup_loss.item():.4f}",
                         "mask": f"{mask_ratio:.2f}",
@@ -231,6 +373,12 @@ class FixMatchTrainer(BaseTrainer):
             }
         )
 
+        # Update pseudo-label distribution for distribution alignment
+        if self.distribution_alignment and all_pseudo_labels:
+            concatenated_pseudo = torch.cat(all_pseudo_labels)
+            self._update_pseudo_label_distribution(concatenated_pseudo)
+            logger.debug(f"Updated π_pseudo: {self.pseudo_label_distribution.cpu().numpy()}")
+
         return epoch_loss, metrics
 
     def _compute_fixmatch_loss(
@@ -239,11 +387,13 @@ class FixMatchTrainer(BaseTrainer):
         labeled_targets: torch.Tensor,
         unlabeled_weak: torch.Tensor,
         unlabeled_strong: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, float, torch.Tensor, torch.Tensor, torch.Tensor
+    ]:
         """Compute FixMatch combined loss.
 
         Returns:
-            (total_loss, sup_loss, unsup_loss, mask_ratio, logits_labeled)
+            (total_loss, sup_loss, unsup_loss, mask_ratio, logits_labeled, pseudo_labels, confidence_mask)
         """
         # Supervised loss on labeled data
         logits_labeled = self.model(labeled_data)
@@ -260,9 +410,13 @@ class FixMatchTrainer(BaseTrainer):
             with torch.no_grad():
                 logits_weak = self.model(unlabeled_weak)
 
+        # Apply distribution alignment temperature scaling
+        if self.distribution_alignment and self.current_temperatures is not None:
+            logits_weak = logits_weak / self.current_temperatures
+
         probs_weak = torch.softmax(logits_weak, dim=1)
         max_probs, pseudo_labels = torch.max(probs_weak, dim=1)
-        confidence_mask = max_probs.ge(self.confidence_threshold).float()
+        confidence_mask = max_probs.ge(self.current_confidence_threshold).float()
         mask_ratio = confidence_mask.mean().item()
 
         # Consistency loss: strong augmentation should match pseudo-labels
@@ -274,7 +428,15 @@ class FixMatchTrainer(BaseTrainer):
         # Combined loss
         total_loss = sup_loss + self.current_lambda_u * unsup_loss
 
-        return total_loss, sup_loss, unsup_loss, mask_ratio, logits_labeled
+        return (
+            total_loss,
+            sup_loss,
+            unsup_loss,
+            mask_ratio,
+            logits_labeled,
+            pseudo_labels,
+            confidence_mask,
+        )
 
     def train(  # type: ignore[override]
         self,
@@ -289,12 +451,27 @@ class FixMatchTrainer(BaseTrainer):
         else:
             lambda_u_info = f"lambda_u={self.lambda_u}"
 
+        # Format confidence threshold info
+        if self.confidence_threshold_ramp_epochs > 0:
+            tau_info = f"tau={self.confidence_threshold_start}→{self.confidence_threshold_end} over {self.confidence_threshold_ramp_epochs} epochs"
+        else:
+            tau_info = f"tau={self.confidence_threshold}"
+
         logger.info(
             f"Starting FixMatch training: {self.num_epochs} epochs on {self.device} "
             f"(AMP={'on' if self.use_amp else 'off'}, "
             f"EMA={'on' if self.ema else 'off'}, "
-            f"tau={self.confidence_threshold}, {lambda_u_info})"
+            f"{tau_info}, {lambda_u_info})"
         )
+
+        # Initialize distribution alignment if enabled
+        if self.distribution_alignment:
+            self._compute_labeled_class_distribution(labeled_loader)
+            self._compute_temperatures()
+            if self.current_temperatures is not None:
+                logger.info(
+                    f"Initial temperature scaling T: {self.current_temperatures.cpu().numpy()}"
+                )
 
         for epoch in range(self.num_epochs):
             self._apply_warmup(epoch)
@@ -316,8 +493,9 @@ class FixMatchTrainer(BaseTrainer):
 
             current_lr = self._get_current_lr()
             self.current_lambda_u = self._get_current_lambda_u(epoch)
+            self.current_confidence_threshold = self._get_current_confidence_threshold(epoch)
             print(
-                f"\nEpoch {epoch + 1}/{self.num_epochs} (lr={current_lr:.6f}, λ={self.current_lambda_u:.3f})"
+                f"\nEpoch {epoch + 1}/{self.num_epochs} (lr={current_lr:.6f}, λ={self.current_lambda_u:.3f}, τ={self.current_confidence_threshold:.3f})"
             )
 
             # Train with FixMatch
