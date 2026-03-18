@@ -47,7 +47,23 @@ class FixMatchTrainer(BaseTrainer):
         # SSL parameters
         ssl_config = config["ssl"]
         self.confidence_threshold = ssl_config["confidence_threshold"]
-        self.lambda_u = ssl_config["lambda_u"]
+
+        # Lambda_u scheduling (dynamic or static)
+        self.lambda_u = ssl_config["lambda_u"]  # base/default value
+        self.lambda_u_start = ssl_config.get("lambda_u_start", self.lambda_u)
+        self.lambda_u_end = ssl_config.get("lambda_u_end", self.lambda_u)
+        self.lambda_u_ramp_epochs = ssl_config.get("lambda_u_ramp_epochs", 0)
+
+        if self.lambda_u_ramp_epochs > 0:
+            logger.info(
+                f"Lambda_u scheduling: {self.lambda_u_start} → {self.lambda_u_end} "
+                f"over {self.lambda_u_ramp_epochs} epochs"
+            )
+        else:
+            logger.info(f"Lambda_u static: {self.lambda_u}")
+
+        # Current lambda_u (updated each epoch)
+        self.current_lambda_u = self.lambda_u
 
         # EMA model for pseudo-label generation
         self.use_ema = ssl_config.get("use_ema", True)
@@ -57,10 +73,30 @@ class FixMatchTrainer(BaseTrainer):
             self.ema = EMAModel(self.model, decay=self.ema_decay)
             logger.info(f"EMA enabled with decay={self.ema_decay}")
 
+        # Freeze/unfreeze schedule
+        model_config = config["model"]
+        self.freeze_backbone_epochs = model_config.get("freeze_backbone_epochs", 0)
+        self.backbone_unfrozen = False
+        if model_config.get("freeze_backbone", False):
+            logger.info(
+                f"Backbone frozen — will unfreeze after epoch {self.freeze_backbone_epochs}"
+            )
+        else:
+            logger.info("Backbone not frozen (full fine-tuning from start)")
+
         # Extended history for SSL-specific metrics
         self.history["sup_loss"] = []
         self.history["unsup_loss"] = []
         self.history["mask_ratio"] = []
+        self.history["lambda_u"] = []
+
+    def _get_current_lambda_u(self, epoch: int) -> float:
+        """Compute current lambda_u value based on scheduling."""
+        if self.lambda_u_ramp_epochs <= 0 or epoch >= self.lambda_u_ramp_epochs:
+            return self.lambda_u_end
+        # Linear ramp from start to end
+        progress = epoch / self.lambda_u_ramp_epochs
+        return self.lambda_u_start + progress * (self.lambda_u_end - self.lambda_u_start)
 
     def train_epoch_ssl(
         self,
@@ -236,7 +272,7 @@ class FixMatchTrainer(BaseTrainer):
         ).mean()
 
         # Combined loss
-        total_loss = sup_loss + self.lambda_u * unsup_loss
+        total_loss = sup_loss + self.current_lambda_u * unsup_loss
 
         return total_loss, sup_loss, unsup_loss, mask_ratio, logits_labeled
 
@@ -247,18 +283,42 @@ class FixMatchTrainer(BaseTrainer):
         val_loader: DataLoader,
     ) -> None:
         """Main FixMatch training loop."""
+        # Format lambda_u info
+        if self.lambda_u_ramp_epochs > 0:
+            lambda_u_info = f"lambda_u={self.lambda_u_start}→{self.lambda_u_end} over {self.lambda_u_ramp_epochs} epochs"
+        else:
+            lambda_u_info = f"lambda_u={self.lambda_u}"
+
         logger.info(
             f"Starting FixMatch training: {self.num_epochs} epochs on {self.device} "
             f"(AMP={'on' if self.use_amp else 'off'}, "
             f"EMA={'on' if self.ema else 'off'}, "
-            f"tau={self.confidence_threshold}, lambda_u={self.lambda_u})"
+            f"tau={self.confidence_threshold}, {lambda_u_info})"
         )
 
         for epoch in range(self.num_epochs):
             self._apply_warmup(epoch)
 
+            # Unfreeze backbone if schedule reached
+            if (
+                not self.backbone_unfrozen
+                and self.freeze_backbone_epochs > 0
+                and epoch >= self.freeze_backbone_epochs
+            ):
+                if hasattr(self.model, "unfreeze_backbone"):
+                    self.model.unfreeze_backbone()
+                    self.backbone_unfrozen = True
+                    logger.info(f"Unfrozen backbone at epoch {epoch + 1}")
+                    # Re-initialize optimizer to include backbone parameters
+                    # (parameters already have requires_grad=True, optimizer will see them)
+                else:
+                    logger.warning("Model does not have unfreeze_backbone method")
+
             current_lr = self._get_current_lr()
-            print(f"\nEpoch {epoch + 1}/{self.num_epochs} (lr={current_lr:.6f})")
+            self.current_lambda_u = self._get_current_lambda_u(epoch)
+            print(
+                f"\nEpoch {epoch + 1}/{self.num_epochs} (lr={current_lr:.6f}, λ={self.current_lambda_u:.3f})"
+            )
 
             # Train with FixMatch
             train_loss, train_metrics = self.train_epoch_ssl(labeled_loader, unlabeled_loader)
@@ -288,6 +348,7 @@ class FixMatchTrainer(BaseTrainer):
             self.history["sup_loss"].append(train_metrics["sup_loss"])
             self.history["unsup_loss"].append(train_metrics["unsup_loss"])
             self.history["mask_ratio"].append(train_metrics["mask_ratio"])
+            self.history["lambda_u"].append(self.current_lambda_u)
 
             # Print metrics
             print(

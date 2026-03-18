@@ -222,6 +222,11 @@ def main():
     device = get_device(args.device)
     logger.info(f"Using device: {device}")
 
+    # CUDA performance optimization
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+        logger.info("CUDA benchmark enabled for fixed-size inputs")
+
     # Datasets
     logger.info("Creating datasets...")
     raw_dataset, labeled_dataset, unlabeled_dataset, val_dataset, test_dataset = create_datasets(
@@ -275,6 +280,7 @@ def main():
         num_classes=config["model"]["num_classes"],
         pretrained=config["model"]["pretrained"],
         dropout_rate=config["model"]["dropout_rate"],
+        freeze_backbone=config["model"].get("freeze_backbone", False),
     )
 
     # Trainer
