@@ -1,0 +1,68 @@
+# FixMatch Tier A configuration - quick improvements based on analysis
+# All parameters are actively read by the training pipeline.
+
+# Dataset
+dataset:
+  data_dir: "data"
+  abnormality_type: "mass"  # mass, calc, both
+  image_size: 525
+  labeled_subset_size: null  # null = use all; integer = ablation subset
+
+# Model
+model:
+  name: "efficientnet-b0"
+  num_classes: 2
+  pretrained: true
+  dropout_rate: 0.3          # increased regularization (was 0.2)
+  freeze_backbone: true      # freeze backbone for initial epochs
+  freeze_backbone_epochs: 5  # earlier unfreezing (was 10)
+
+# Training (optimized for SSL with limited labels)
+training:
+  batch_size: 8
+  num_epochs: 150          # more epochs for pseudo-label stabilization
+  learning_rate: 0.0003    # lower than supervised (was 0.001)
+  weight_decay: 0.0001
+  momentum: 0.9  # for SGD only
+  optimizer: "adam"  # adam, adamw, sgd
+  scheduler: "cosine"  # cosine, step, plateau, null
+  warmup_epochs: 10        # longer warmup (was 5)
+  early_stopping_patience: 25  # more patience (was 10)
+  num_workers: 20
+  use_amp: true  # mixed precision training
+  gradient_clipping: true
+  max_grad_norm: 1.0
+  class_weighted_loss: true  # inverse-frequency class weighting
+
+# SSL (FixMatch) - Tier A optimized parameters
+ssl:
+  method: "fixmatch"
+  confidence_threshold: 0.70  # even lower threshold for earlier pseudo-labels (was 0.80)
+  lambda_u: 0.5  # base weight for unsupervised loss
+  lambda_u_start: 0.1  # start value for linear ramp
+  lambda_u_end: 0.5    # end value for linear ramp  
+  lambda_u_ramp_epochs: 20  # ramp over 20 epochs
+  unlabeled_batch_ratio: 2    # mu: reduced from 7 to save VRAM (~3GB vs ~7GB)
+  randaugment_n: 2  # RandAugment: number of transforms
+  randaugment_m: 10  # RandAugment: magnitude (0-30)
+  use_ema: true  # exponential moving average for pseudo-labels
+  ema_decay: 0.999  # EMA decay rate
+
+# Data augmentation
+augmentation:
+  weak:
+    random_horizontal_flip: true
+    random_vertical_flip: true
+    random_rotation: 5  # degrees
+    color_jitter: 0.1  # brightness/contrast/saturation variation
+
+# Logging and checkpoints (per-experiment, inside output_dir)
+logging:
+  save_freq: 10  # save checkpoint every N epochs
+  log_freq: 10  # log metrics every N batches
+
+# Weights & Biases (optional)
+wandb:
+  enabled: false
+  project: "ssl-mammography"
+  run_name: null  # auto-generated if null
