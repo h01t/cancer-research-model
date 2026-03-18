@@ -1,26 +1,52 @@
 # Project TODO
 
-## Completed (✓)
+## Completed
 
 - [x] Project setup: environment, dependencies, license, project structure
 - [x] Data exploration & preprocessing: analyze dataset, create data loaders
 - [x] Implement supervised baseline with EfficientNet-B0
 - [x] Implement FixMatch algorithm components
-- [x] Create training pipeline for SSL experiments (supervised + FixMatch trainers)
-- [x] Write documentation: Jupyter notebook (01_data_exploration), README, comprehensive USER_GUIDE.md
-- [x] Write unit tests for critical components (test_supervised.py)
-- [x] Create experiment scripts (train_supervised.py, train_fixmatch.py)
-- [x] Create remaining Jupyter notebooks (02_training_curves, 03_embeddings, 04_model_interpretation)
-- [x] Create helper scripts (quick_start.sh, run_ablation.sh)
-- [x] Update README.md to reference USER_GUIDE.md and new notebooks
+- [x] Create training pipeline for SSL experiments
+- [x] Write documentation: notebooks, README, USER_GUIDE
+- [x] Create experiment scripts and helper scripts
 
-## In Progress / Optional
+### v0.2.0 Refactor (completed)
 
-- [ ] Run ablation study with labeled subsets (100,250,500) – requires GPU time
+- [x] Fix augmentation architecture (dataset returns raw PIL, transforms in wrappers)
+- [x] Fix FixMatch trainer (method name, batch ratio, augmentation pipeline)
+- [x] Fix supervised validation transforms (val uses test transforms now)
+- [x] Fix device detection (MPS + CUDA + CPU auto-detection)
+- [x] Fix metrics edge cases (single-class AUC, confusion matrix guard)
+- [x] Fix Pandas SettingWithCopyWarning (.copy() on filtered DataFrames)
+- [x] Add mixed precision training (AMP) for CUDA and MPS
+- [x] Add learning rate warmup (linear, config-driven)
+- [x] Add gradient clipping (configurable max_grad_norm)
+- [x] Add EMA model for FixMatch pseudo-label generation
+- [x] Add class-weighted loss (inverse frequency)
+- [x] Switch to torchvision EfficientNet (remove efficientnet-pytorch dependency)
+- [x] Make augmentation config-driven (read from YAML)
+- [x] Add pseudo-label quality logging (mask ratio, sup/unsup loss)
+- [x] Add W&B integration (optional)
+- [x] Per-experiment checkpoints (inside output_dir)
+- [x] Add pyproject.toml for proper packaging
+- [x] Clean dependencies (remove albumentations, opencv, efficientnet-pytorch)
+- [x] Clean dead config keys
+- [x] Write 42 pytest tests with synthetic data (no real dataset required)
+- [x] Fix shell scripts (Python version check, --max_epochs arg)
+- [x] Cross-device checkpoint loading (weights_only, map_location)
+- [x] Create SSL dataset wrappers (FixMatchLabeledDataset, FixMatchUnlabeledDataset)
+- [x] Update README.md and documentation
+
+## Next Steps
+
+- [ ] Run ablation study with labeled subsets (100, 250, 500) on CUDA workstation
+- [ ] Update notebooks to work with refactored code
+- [ ] Update USER_GUIDE.md with actual results and v0.2 changes
 
 ## Future Enhancements
 
-- [ ] Add more SSL algorithms (e.g., MixMatch, ReMixMatch)
+- [ ] Add more SSL algorithms (MixMatch, MeanTeacher)
 - [ ] Support multi-class classification (calcification vs mass)
-- [ ] Integrate advanced augmentations (e.g., medical-specific transforms)
+- [ ] Medical-specific augmentations (CLAHE, contrast normalization)
+- [ ] Model export pipeline (ONNX, TorchScript)
 - [ ] Deploy model as web service (FastAPI)

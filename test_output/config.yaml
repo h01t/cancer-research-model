@@ -1,10 +1,6 @@
 augmentation:
-  strong:
-    cutout: true
-    cutout_size: 0.25
-    randaugment: true
   weak:
-    color_jitter: 0.1
+    color_jitter: 0.0
     random_horizontal_flip: true
     random_rotation: 5
     random_vertical_flip: false
@@ -13,43 +9,40 @@ dataset:
   data_dir: data
   image_size: 224
   labeled_subset_size: 10
-  split: train
-evaluation:
-  metrics:
-  - accuracy
-  - auc
-  - f1
-  - precision
-  - recall
-  save_predictions: true
-  test_split: test
 logging:
-  log_dir: logs/test
   log_freq: 1
-  save_dir: checkpoints/test
   save_freq: 1
-  use_tensorboard: false
 model:
   dropout_rate: 0.2
+  freeze_backbone: false
   name: efficientnet-b0
   num_classes: 2
   pretrained: false
 ssl:
   confidence_threshold: 0.95
+  ema_decay: 0.999
   lambda_u: 1.0
   method: fixmatch
   randaugment_m: 10
   randaugment_n: 2
-  strong_augmentation: randaugment
-  unlabeled_batch_ratio: 7
-  weak_augmentation: flip_shift
+  unlabeled_batch_ratio: 2
+  use_ema: false
 training:
   batch_size: 4
+  class_weighted_loss: false
   early_stopping_patience: 5
+  gradient_clipping: true
   learning_rate: 0.001
+  max_grad_norm: 1.0
   momentum: 0.9
   num_epochs: 2
+  num_workers: 0
   optimizer: adam
   scheduler: cosine
+  use_amp: false
   warmup_epochs: 0
   weight_decay: 0.0001
+wandb:
+  enabled: false
+  project: ssl-mammography
+  run_name: null

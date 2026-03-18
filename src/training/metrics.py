@@ -1,53 +1,78 @@
+"""
+Classification metrics for binary medical image classification.
+"""
+
+import logging
+
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
-    roc_auc_score,
+    confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
-    confusion_matrix,
+    roc_auc_score,
 )
 
+logger = logging.getLogger(__name__)
 
-def compute_metrics(y_true, y_pred, y_prob=None):
-    """Compute classification metrics.
+
+def compute_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_prob: np.ndarray | None = None,
+) -> dict[str, float]:
+    """Compute classification metrics for binary classification.
 
     Args:
-        y_true: ground truth labels (binary)
-        y_pred: predicted labels (binary)
+        y_true: ground truth labels (0 or 1)
+        y_pred: predicted labels (0 or 1)
         y_prob: predicted probabilities for positive class (optional)
 
     Returns:
-        dict of metrics
+        dict of metric_name -> value
     """
-    metrics = {}
+    metrics: dict[str, float] = {}
 
     # Basic metrics
-    metrics["accuracy"] = accuracy_score(y_true, y_pred)
-    metrics["precision"] = precision_score(y_true, y_pred, zero_division=0)
-    metrics["recall"] = recall_score(y_true, y_pred, zero_division=0)
-    metrics["f1"] = f1_score(y_true, y_pred, zero_division=0)
+    metrics["accuracy"] = float(accuracy_score(y_true, y_pred))
+    metrics["precision"] = float(precision_score(y_true, y_pred, zero_division=0.0))
+    metrics["recall"] = float(recall_score(y_true, y_pred, zero_division=0.0))
+    metrics["f1"] = float(f1_score(y_true, y_pred, zero_division=0.0))
 
-    # AUC if probabilities available
+    # AUC-ROC (requires probabilities and both classes present)
     if y_prob is not None:
-        try:
-            metrics["auc"] = roc_auc_score(y_true, y_prob)
-        except ValueError:
+        n_classes = len(np.unique(y_true))
+        if n_classes < 2:
+            logger.warning("AUC undefined (single class in y_true). Setting to 0.0.")
             metrics["auc"] = 0.0
+        else:
+            try:
+                auc_val = float(roc_auc_score(y_true, y_prob))
+                metrics["auc"] = 0.0 if np.isnan(auc_val) else auc_val
+            except ValueError:
+                logger.warning("AUC computation failed. Setting to 0.0.")
+                metrics["auc"] = 0.0
 
-    # Confusion matrix
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-    metrics["tn"] = tn
-    metrics["fp"] = fp
-    metrics["fn"] = fn
-    metrics["tp"] = tp
-    metrics["sensitivity"] = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    metrics["specificity"] = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    # Confusion matrix components with safety guard
+    try:
+        cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+        tn, fp, fn, tp = cm.ravel()
+        metrics["tn"] = float(tn)
+        metrics["fp"] = float(fp)
+        metrics["fn"] = float(fn)
+        metrics["tp"] = float(tp)
+        metrics["sensitivity"] = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+        metrics["specificity"] = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+    except ValueError:
+        logger.warning("Confusion matrix computation failed. Setting components to 0.")
+        for key in ("tn", "fp", "fn", "tp", "sensitivity", "specificity"):
+            metrics[key] = 0.0
 
     return metrics
 
 
-def aggregate_metrics(metrics_list):
+def aggregate_metrics(metrics_list: list[dict[str, float]]) -> dict[str, float]:
     """Aggregate metrics across multiple runs/folds.
 
     Args:
@@ -59,13 +84,17 @@ def aggregate_metrics(metrics_list):
     if not metrics_list:
         return {}
 
-    aggregated = {}
+    aggregated: dict[str, float] = {}
     keys = metrics_list[0].keys()
 
     for key in keys:
-        values = [m[key] for m in metrics_list if isinstance(m[key], (int, float))]
+        values = [
+            float(m[key])
+            for m in metrics_list
+            if isinstance(m[key], (int, float, np.integer, np.floating))
+        ]
         if values:
-            aggregated[f"{key}_mean"] = np.mean(values)
-            aggregated[f"{key}_std"] = np.std(values)
+            aggregated[f"{key}_mean"] = float(np.mean(values))
+            aggregated[f"{key}_std"] = float(np.std(values))
 
     return aggregated

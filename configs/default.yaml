@@ -1,12 +1,12 @@
 # Default configuration for SSL Mammography project
+# All parameters are actively read by the training pipeline.
 
 # Dataset
 dataset:
   data_dir: "data"
   abnormality_type: "mass"  # mass, calc, both
-  split: "train"
   image_size: 512
-  labeled_subset_size: null  # number of labeled samples (for SSL ablation)
+  labeled_subset_size: null  # null = use all; integer = ablation subset
 
 # Model
 model:
@@ -14,6 +14,7 @@ model:
   num_classes: 2
   pretrained: true
   dropout_rate: 0.2
+  freeze_backbone: false  # freeze backbone for initial epochs
 
 # Training
 training:
@@ -21,45 +22,43 @@ training:
   num_epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
-  momentum: 0.9
-  optimizer: "adam"  # adam, sgd
-  scheduler: "cosine"  # cosine, step, plateau
+  momentum: 0.9  # for SGD only
+  optimizer: "adam"  # adam, adamw, sgd
+  scheduler: "cosine"  # cosine, step, plateau, null
   warmup_epochs: 5
   early_stopping_patience: 10
+  num_workers: 4
+  use_amp: true  # mixed precision training
+  gradient_clipping: true
+  max_grad_norm: 1.0
+  class_weighted_loss: true  # inverse-frequency class weighting
 
 # SSL (FixMatch)
 ssl:
   method: "fixmatch"
-  confidence_threshold: 0.95
+  confidence_threshold: 0.95  # tau: pseudo-label confidence threshold
   lambda_u: 1.0  # weight for unsupervised loss
-  unlabeled_batch_ratio: 7  # ratio of unlabeled to labeled batch size
-  weak_augmentation: "flip_shift"
-  strong_augmentation: "randaugment"
-  randaugment_n: 2
-  randaugment_m: 10
+  unlabeled_batch_ratio: 7  # mu: unlabeled/labeled batch size ratio
+  randaugment_n: 2  # RandAugment: number of transforms
+  randaugment_m: 10  # RandAugment: magnitude (0-30)
+  use_ema: true  # exponential moving average for pseudo-labels
+  ema_decay: 0.999  # EMA decay rate
 
 # Data augmentation
 augmentation:
   weak:
     random_horizontal_flip: true
-    random_vertical_flip: false
+    random_vertical_flip: true
     random_rotation: 5  # degrees
-    color_jitter: 0.1
-  strong:
-    randaugment: true
-    cutout: true
-    cutout_size: 0.25
+    color_jitter: 0.1  # brightness/contrast/saturation variation
 
-# Logging and checkpoints
+# Logging and checkpoints (per-experiment, inside output_dir)
 logging:
-  log_dir: "logs"
-  save_dir: "checkpoints"
   save_freq: 10  # save checkpoint every N epochs
-  log_freq: 10  # log metrics every N iterations
-  use_tensorboard: false
+  log_freq: 10  # log metrics every N batches
 
-# Evaluation
-evaluation:
-  metrics: ["accuracy", "auc", "f1", "precision", "recall"]
-  test_split: "test"
-  save_predictions: true
+# Weights & Biases (optional)
+wandb:
+  enabled: false
+  project: "ssl-mammography"
+  run_name: null  # auto-generated if null

@@ -1,0 +1,52 @@
+[project]
+name = "ssl-mammography"
+version = "0.2.0"
+description = "Semi-supervised learning for breast cancer detection on CBIS-DDSM"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "scikit-learn>=1.2.0",
+    "pandas>=1.5.0",
+    "numpy>=1.23.0",
+    "matplotlib>=3.6.0",
+    "seaborn>=0.12.0",
+    "tqdm>=4.64.0",
+    "Pillow>=9.0.0",
+    "pyyaml>=6.0",
+    "umap-learn>=0.5.0",
+]
+
+[project.optional-dependencies]
+wandb = ["wandb>=0.15.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+    "black>=23.0.0",
+    "jupyterlab>=3.0.0",
+]
+all = ["ssl-mammography[wandb,dev]"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"

@@ -65,14 +65,14 @@ for subset in "${SUBSETS[@]}"; do
     
     # Supervised baseline
     echo "  Supervised baseline..."
-    python scripts/train_supervised.py \
+    python3 scripts/train_supervised.py \
         --config "$CONFIG" \
         --labeled_subset "$subset" \
         --output_dir "${OUTPUT_DIR}/supervised_${subset}"
     
     # FixMatch SSL
     echo "  FixMatch SSL..."
-    python scripts/train_fixmatch.py \
+    python3 scripts/train_fixmatch.py \
         --config "$CONFIG" \
         --labeled "$subset" \
         --output_dir "${OUTPUT_DIR}/fixmatch_${subset}"
