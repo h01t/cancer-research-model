@@ -54,7 +54,14 @@ def compute_class_weights(dataset: CBISDDSMDataset) -> torch.Tensor:
 def create_datasets(config: dict, labeled_subset_size: int | None = None):
     """Create train, validation, and test datasets.
 
-    Returns raw PIL datasets split into train/val, plus a test dataset.
+    When labeled_subset_size is None (full data):
+        - 85/15 train/val split from the full dataset
+
+    When labeled_subset_size is set (ablation):
+        - Hold out 15% from the FULL pool as validation (same split as FixMatch)
+        - Use labeled_subset_size samples from the remaining 85% for training
+        - This keeps val set large and comparable across experiments
+
     Transforms are applied via wrapper datasets to ensure val gets test transforms.
     """
     image_size = config["dataset"]["image_size"]
@@ -63,25 +70,51 @@ def create_datasets(config: dict, labeled_subset_size: int | None = None):
     train_transform = get_transforms("weak", image_size=image_size, config=aug_config)
     test_transform = get_transforms("test", image_size=image_size)
 
-    # Load raw dataset (no transform — returns PIL images)
+    # Always load the full raw dataset (no transform — returns PIL images)
     raw_dataset = CBISDDSMDataset(
         split="train",
         abnormality_type=config["dataset"]["abnormality_type"],
-        labeled_subset_size=labeled_subset_size,
+        labeled_subset_size=None,  # Always load all samples
         transform=None,  # Raw PIL images
         data_dir=config["dataset"]["data_dir"],
     )
 
-    # Split into train/val (80/20) using indices
+    # Deterministic split: hold out 15% for validation from the full pool
+    # Uses the SAME seed and logic as train_fixmatch.py so val sets are identical
     total = len(raw_dataset)
-    train_size = int(0.8 * total)
-    indices = list(range(total))
-
-    # Deterministic split
+    n_val = int(0.15 * total)
     generator = torch.Generator().manual_seed(42)
     perm = torch.randperm(total, generator=generator).tolist()
-    train_indices = perm[:train_size]
-    val_indices = perm[train_size:]
+    val_indices = perm[:n_val]
+    train_pool_indices = perm[n_val:]
+
+    if labeled_subset_size is not None:
+        # Ablation mode: sample labeled_subset_size from the training pool (class-balanced)
+        import random as _random
+
+        rng = _random.Random(42)
+        train_pool_labels = [raw_dataset.labels[i] for i in train_pool_indices]
+        benign_pool = [
+            idx for idx, label in zip(train_pool_indices, train_pool_labels) if label == 0
+        ]
+        malignant_pool = [
+            idx for idx, label in zip(train_pool_indices, train_pool_labels) if label == 1
+        ]
+
+        num_per_class = labeled_subset_size // 2
+        if len(benign_pool) < num_per_class or len(malignant_pool) < num_per_class:
+            raise ValueError(
+                f"Not enough samples per class for {labeled_subset_size} labeled. "
+                f"Benign: {len(benign_pool)}, Malignant: {len(malignant_pool)}"
+            )
+
+        train_indices = rng.sample(benign_pool, num_per_class) + rng.sample(
+            malignant_pool, num_per_class
+        )
+        rng.shuffle(train_indices)
+    else:
+        # Full data mode: use entire training pool
+        train_indices = train_pool_indices
 
     # Wrap with appropriate transforms
     train_subset = TransformSubset(Subset(raw_dataset, train_indices), train_transform)
@@ -96,9 +129,7 @@ def create_datasets(config: dict, labeled_subset_size: int | None = None):
         data_dir=config["dataset"]["data_dir"],
     )
 
-    logger.info(
-        f"Train: {len(train_subset)}, Val: {len(val_subset)}, Test: {len(test_dataset)}"
-    )
+    logger.info(f"Train: {len(train_subset)}, Val: {len(val_subset)}, Test: {len(test_dataset)}")
     return raw_dataset, train_subset, val_subset, test_dataset
 
 

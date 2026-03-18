@@ -61,7 +61,6 @@ class FixMatchTrainer(BaseTrainer):
         self.history["sup_loss"] = []
         self.history["unsup_loss"] = []
         self.history["mask_ratio"] = []
-        self.history["pseudo_label_acc"] = []
 
     def train_epoch_ssl(
         self,
@@ -118,9 +117,7 @@ class FixMatchTrainer(BaseTrainer):
 
             # --- Forward pass with optional AMP ---
             if self.use_amp:
-                with torch.amp.autocast(
-                    device_type=self.device.type, dtype=self.amp_dtype
-                ):
+                with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
                     loss, sup_loss, unsup_loss, mask_ratio, logits_labeled = (
                         self._compute_fixmatch_loss(
                             labeled_data,
@@ -144,17 +141,13 @@ class FixMatchTrainer(BaseTrainer):
                 self.scaler.scale(loss).backward()
                 if self.use_grad_clip:
                     self.scaler.unscale_(self.optimizer)
-                    nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.max_grad_norm
-                    )
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
             else:
                 loss.backward()
                 if self.use_grad_clip:
-                    nn.utils.clip_grad_norm_(
-                        self.model.parameters(), self.max_grad_norm
-                    )
+                    nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
                 self.optimizer.step()
 
             # Update EMA
@@ -192,9 +185,7 @@ class FixMatchTrainer(BaseTrainer):
         epoch_unsup_loss = total_unsup_loss / max(num_batches, 1)
         epoch_mask_ratio = total_mask_ratio / max(num_batches, 1)
 
-        metrics = compute_metrics(
-            np.array(all_labels), np.array(all_preds), np.array(all_probs)
-        )
+        metrics = compute_metrics(np.array(all_labels), np.array(all_preds), np.array(all_probs))
         metrics.update(
             {
                 "loss": epoch_loss,
@@ -241,8 +232,7 @@ class FixMatchTrainer(BaseTrainer):
         # Consistency loss: strong augmentation should match pseudo-labels
         logits_strong = self.model(unlabeled_strong)
         unsup_loss = (
-            F.cross_entropy(logits_strong, pseudo_labels, reduction="none")
-            * confidence_mask
+            F.cross_entropy(logits_strong, pseudo_labels, reduction="none") * confidence_mask
         ).mean()
 
         # Combined loss
@@ -271,9 +261,7 @@ class FixMatchTrainer(BaseTrainer):
             print(f"\nEpoch {epoch + 1}/{self.num_epochs} (lr={current_lr:.6f})")
 
             # Train with FixMatch
-            train_loss, train_metrics = self.train_epoch_ssl(
-                labeled_loader, unlabeled_loader
-            )
+            train_loss, train_metrics = self.train_epoch_ssl(labeled_loader, unlabeled_loader)
 
             # Validate (uses EMA model if available)
             if self.ema is not None:
@@ -284,9 +272,7 @@ class FixMatchTrainer(BaseTrainer):
 
             # Update scheduler (after warmup)
             if epoch >= self.warmup_epochs and self.scheduler is not None:
-                if isinstance(
-                    self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
-                ):
+                if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     self.scheduler.step(val_metrics.get("auc", 0.0))
                 else:
                     self.scheduler.step()

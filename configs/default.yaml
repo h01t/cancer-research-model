@@ -5,7 +5,7 @@
 dataset:
   data_dir: "data"
   abnormality_type: "mass"  # mass, calc, both
-  image_size: 512
+  image_size: 224
   labeled_subset_size: null  # null = use all; integer = ablation subset
 
 # Model
@@ -18,7 +18,7 @@ model:
 
 # Training
 training:
-  batch_size: 32
+  batch_size: 16
   num_epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
@@ -27,7 +27,7 @@ training:
   scheduler: "cosine"  # cosine, step, plateau, null
   warmup_epochs: 5
   early_stopping_patience: 10
-  num_workers: 4
+  num_workers: 20
   use_amp: true  # mixed precision training
   gradient_clipping: true
   max_grad_norm: 1.0

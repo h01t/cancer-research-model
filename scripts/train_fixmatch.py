@@ -56,14 +56,16 @@ def compute_class_weights(dataset: CBISDDSMDataset) -> torch.Tensor:
 def create_datasets(config: dict, num_labeled: int):
     """Create labeled, unlabeled, validation, and test datasets.
 
-    Data flow:
-    1. Load raw dataset (no transforms) — returns PIL images
-    2. Split into labeled/unlabeled indices (class-balanced)
-    3. Split labeled into train/val
-    4. Wrap with appropriate transforms:
-       - Labeled train: weak augmentation
-       - Unlabeled: weak + strong augmentation (same image, two views)
-       - Validation: test transforms
+    Data flow (standard SSL validation strategy):
+    1. Load full raw dataset (no transforms) — returns PIL images
+    2. Hold out 15% as validation set from the FULL pool (class-balanced, deterministic)
+    3. From the remaining 85%, split num_labeled as labeled, rest as unlabeled
+    4. Wrap with appropriate transforms
+
+    This ensures:
+    - All labeled samples go to training (none wasted on validation)
+    - Validation set is large enough for stable AUC estimates (~185 for mass)
+    - Supervised and FixMatch use the same val set for fair comparison
     """
     image_size = config["dataset"]["image_size"]
     ssl_config = config["ssl"]
@@ -88,24 +90,47 @@ def create_datasets(config: dict, num_labeled: int):
         data_dir=config["dataset"]["data_dir"],
     )
 
-    # Split into labeled and unlabeled indices
-    labeled_indices, unlabeled_indices = split_labeled_unlabeled(
-        raw_dataset, num_labeled, seed=42
-    )
-
-    # Further split labeled into train/val (80/20)
+    # Step 1: Hold out 15% as validation from the full pool
+    total = len(raw_dataset)
+    n_val = int(0.15 * total)
     generator = torch.Generator().manual_seed(42)
-    n_labeled = len(labeled_indices)
-    n_val = max(1, int(0.2 * n_labeled))
-    n_train = n_labeled - n_val
+    perm = torch.randperm(total, generator=generator).tolist()
+    val_indices = perm[:n_val]
+    train_pool_indices = perm[n_val:]
 
-    perm = torch.randperm(n_labeled, generator=generator).tolist()
-    train_labeled_indices = [labeled_indices[i] for i in perm[:n_train]]
-    val_labeled_indices = [labeled_indices[i] for i in perm[n_train:]]
+    # Step 2: From the training pool, split into labeled/unlabeled
+    # We need to remap: split_labeled_unlabeled works on a Subset
+    # Instead, manually do class-balanced sampling from train_pool_indices
+    import random as _random
+
+    rng = _random.Random(42)
+
+    # Get labels for the training pool
+    train_pool_labels = [raw_dataset.labels[i] for i in train_pool_indices]
+    benign_pool = [idx for idx, label in zip(train_pool_indices, train_pool_labels) if label == 0]
+    malignant_pool = [
+        idx for idx, label in zip(train_pool_indices, train_pool_labels) if label == 1
+    ]
+
+    num_per_class = num_labeled // 2
+    if len(benign_pool) < num_per_class or len(malignant_pool) < num_per_class:
+        raise ValueError(
+            f"Not enough samples per class in training pool for {num_labeled} labeled. "
+            f"Benign: {len(benign_pool)}, Malignant: {len(malignant_pool)}"
+        )
+
+    labeled_indices = rng.sample(benign_pool, num_per_class) + rng.sample(
+        malignant_pool, num_per_class
+    )
+    rng.shuffle(labeled_indices)
+
+    labeled_set = set(labeled_indices)
+    unlabeled_indices = [i for i in train_pool_indices if i not in labeled_set]
+    rng.shuffle(unlabeled_indices)
 
     # Build dataset wrappers
     labeled_train = FixMatchLabeledDataset(
-        Subset(raw_dataset, train_labeled_indices),
+        Subset(raw_dataset, labeled_indices),
         weak_transform=weak_transform,
     )
 
@@ -116,7 +141,7 @@ def create_datasets(config: dict, num_labeled: int):
     )
 
     val_dataset = TransformSubset(
-        Subset(raw_dataset, val_labeled_indices),
+        Subset(raw_dataset, val_indices),
         transform=test_transform,
     )
 
@@ -199,8 +224,8 @@ def main():
 
     # Datasets
     logger.info("Creating datasets...")
-    raw_dataset, labeled_dataset, unlabeled_dataset, val_dataset, test_dataset = (
-        create_datasets(config, args.labeled)
+    raw_dataset, labeled_dataset, unlabeled_dataset, val_dataset, test_dataset = create_datasets(
+        config, args.labeled
     )
 
     # Class weights
