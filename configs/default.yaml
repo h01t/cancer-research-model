@@ -1,0 +1,65 @@
+# Default configuration for SSL Mammography project
+
+# Dataset
+dataset:
+  data_dir: "data"
+  abnormality_type: "mass"  # mass, calc, both
+  split: "train"
+  image_size: 512
+  labeled_subset_size: null  # number of labeled samples (for SSL ablation)
+
+# Model
+model:
+  name: "efficientnet-b0"
+  num_classes: 2
+  pretrained: true
+  dropout_rate: 0.2
+
+# Training
+training:
+  batch_size: 32
+  num_epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  momentum: 0.9
+  optimizer: "adam"  # adam, sgd
+  scheduler: "cosine"  # cosine, step, plateau
+  warmup_epochs: 5
+  early_stopping_patience: 10
+
+# SSL (FixMatch)
+ssl:
+  method: "fixmatch"
+  confidence_threshold: 0.95
+  lambda_u: 1.0  # weight for unsupervised loss
+  unlabeled_batch_ratio: 7  # ratio of unlabeled to labeled batch size
+  weak_augmentation: "flip_shift"
+  strong_augmentation: "randaugment"
+  randaugment_n: 2
+  randaugment_m: 10
+
+# Data augmentation
+augmentation:
+  weak:
+    random_horizontal_flip: true
+    random_vertical_flip: false
+    random_rotation: 5  # degrees
+    color_jitter: 0.1
+  strong:
+    randaugment: true
+    cutout: true
+    cutout_size: 0.25
+
+# Logging and checkpoints
+logging:
+  log_dir: "logs"
+  save_dir: "checkpoints"
+  save_freq: 10  # save checkpoint every N epochs
+  log_freq: 10  # log metrics every N iterations
+  use_tensorboard: false
+
+# Evaluation
+evaluation:
+  metrics: ["accuracy", "auc", "f1", "precision", "recall"]
+  test_split: "test"
+  save_predictions: true

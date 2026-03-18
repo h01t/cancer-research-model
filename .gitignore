@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Model
+sessions
+sessions/**
+MODEL.md
+IDEA.md
+
+# PyTorch
+*.pt
+*.pth
+*.bin
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data
+data/processed/
+data/interim/
+*.h5
+*.hdf5
+*.csv
+*.jpg
+*.jpeg
+*.png
+*.npy
+*.npz
+
+# Logs and outputs
+logs/
+outputs/
+checkpoints/
+results/
+*.log
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb
+
+# OS
+.DS_Store
+Thumbs.db

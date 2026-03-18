@@ -1,0 +1,65 @@
+# Test configuration for quick validation
+
+# Dataset
+dataset:
+  data_dir: "data"
+  abnormality_type: "mass"  # mass, calc, both
+  split: "train"
+  image_size: 224  # smaller for faster testing
+  labeled_subset_size: 10  # small labeled set
+
+# Model
+model:
+  name: "efficientnet-b0"
+  num_classes: 2
+  pretrained: false
+  dropout_rate: 0.2
+
+# Training
+training:
+  batch_size: 4
+  num_epochs: 2
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  momentum: 0.9
+  optimizer: "adam"
+  scheduler: "cosine"
+  warmup_epochs: 0
+  early_stopping_patience: 5
+
+# SSL (FixMatch) - not used for supervised
+ssl:
+  method: "fixmatch"
+  confidence_threshold: 0.95
+  lambda_u: 1.0
+  unlabeled_batch_ratio: 7
+  weak_augmentation: "flip_shift"
+  strong_augmentation: "randaugment"
+  randaugment_n: 2
+  randaugment_m: 10
+
+# Data augmentation
+augmentation:
+  weak:
+    random_horizontal_flip: true
+    random_vertical_flip: false
+    random_rotation: 5
+    color_jitter: 0.1
+  strong:
+    randaugment: true
+    cutout: true
+    cutout_size: 0.25
+
+# Logging and checkpoints
+logging:
+  log_dir: "logs/test"
+  save_dir: "checkpoints/test"
+  save_freq: 1
+  log_freq: 1
+  use_tensorboard: false
+
+# Evaluation
+evaluation:
+  metrics: ["accuracy", "auc", "f1", "precision", "recall"]
+  test_split: "test"
+  save_predictions: true
