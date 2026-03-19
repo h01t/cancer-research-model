@@ -42,9 +42,23 @@ class EMAModel:
         """Update EMA parameters with current model parameters."""
         for name, param in model.named_parameters():
             if param.requires_grad and name in self.shadow:
-                self.shadow[name].mul_(self.decay).add_(
-                    param.data, alpha=1.0 - self.decay
-                )
+                self.shadow[name].mul_(self.decay).add_(param.data, alpha=1.0 - self.decay)
+
+    @torch.no_grad()
+    def refresh(self, model: nn.Module) -> None:
+        """Add any new requires_grad parameters not yet tracked by EMA.
+
+        Call this after unfreezing backbone layers so that the newly
+        unfrozen parameters are included in EMA averaging going forward.
+        Their shadow values are initialized to their current weights.
+        """
+        added = 0
+        for name, param in model.named_parameters():
+            if param.requires_grad and name not in self.shadow:
+                self.shadow[name] = param.data.clone()
+                added += 1
+        if added:
+            logger.info(f"EMA: added {added} newly-unfrozen parameters to shadow")
 
     def apply(self, model: nn.Module) -> None:
         """Apply EMA weights to model (backup current weights first)."""

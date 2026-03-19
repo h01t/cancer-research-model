@@ -144,10 +144,14 @@ class TestTrainingLoop:
             model = EfficientNetClassifier(num_classes=2, pretrained=False)
             trainer = BaseTrainer(model, base_config, output_dir=tmpdir)
 
+            trainer.best_val_auc = 0.85
             trainer.save_checkpoint(1, 0.85, best=True)
             checkpoint_path = Path(tmpdir) / "best_model.pth"
             assert checkpoint_path.exists()
 
-            epoch, auc = trainer.load_checkpoint(checkpoint_path)
+            # Load into a fresh trainer
+            model2 = EfficientNetClassifier(num_classes=2, pretrained=False)
+            trainer2 = BaseTrainer(model2, base_config, output_dir=tmpdir)
+            epoch = trainer2.load_checkpoint(checkpoint_path)
             assert epoch == 1
-            assert auc == 0.85
+            assert trainer2.best_val_auc == 0.85

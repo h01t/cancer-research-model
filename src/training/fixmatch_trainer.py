@@ -104,9 +104,7 @@ class FixMatchTrainer(BaseTrainer):
         self.pseudo_label_distribution = (
             torch.ones(num_classes, dtype=torch.float32, device="cpu") / num_classes
         )
-        self.current_temperatures = (
-            None  # T = sqrt(π_pseudo / π_labeled), stored on device when computed
-        )
+        self.distribution_ratio = None  # π_labeled / π_pseudo, stored on device when computed
 
         if self.distribution_alignment:
             logger.info(
@@ -192,16 +190,22 @@ class FixMatchTrainer(BaseTrainer):
         self.pseudo_label_distribution = (
             alpha * self.pseudo_label_distribution + (1 - alpha) * current_dist
         )
-        self._compute_temperatures()
+        self._compute_distribution_ratio()
 
-    def _compute_temperatures(self) -> None:
-        """Compute temperature scaling T = sqrt(π_pseudo / π_labeled) with smoothing."""
+    def _compute_distribution_ratio(self) -> None:
+        """Compute π_labeled / π_pseudo for distribution alignment (with smoothing).
+
+        The ratio is used to re-weight pseudo-label probabilities so that
+        the pseudo-label class distribution matches the labeled distribution.
+        Ref: ReMixMatch (Berthelot et al., 2020).
+        """
         if self.labeled_class_distribution is None or self.pseudo_label_distribution is None:
             return
         eps = self.temperature_smoothing
-        ratio = (self.pseudo_label_distribution + eps) / (self.labeled_class_distribution + eps)
-        self.current_temperatures = torch.sqrt(ratio).to(self.device)
-        logger.debug(f"Temperature scaling T: {self.current_temperatures.cpu().numpy()}")
+        self.distribution_ratio = (
+            (self.labeled_class_distribution + eps) / (self.pseudo_label_distribution + eps)
+        ).to(self.device)
+        logger.debug(f"Distribution ratio (π_l/π_p): {self.distribution_ratio.cpu().numpy()}")
 
     def train_epoch_ssl(
         self,
@@ -403,18 +407,23 @@ class FixMatchTrainer(BaseTrainer):
         if self.ema is not None:
             # Use EMA model for more stable pseudo-labels
             self.ema.apply(self.model)
-            with torch.no_grad():
-                logits_weak = self.model(unlabeled_weak)
-            self.ema.restore(self.model)
+            try:
+                with torch.no_grad():
+                    logits_weak = self.model(unlabeled_weak)
+            finally:
+                self.ema.restore(self.model)
         else:
             with torch.no_grad():
                 logits_weak = self.model(unlabeled_weak)
 
-        # Apply distribution alignment temperature scaling
-        if self.distribution_alignment and self.current_temperatures is not None:
-            logits_weak = logits_weak / self.current_temperatures
-
         probs_weak = torch.softmax(logits_weak, dim=1)
+
+        # Distribution alignment: re-weight probabilities so pseudo-label
+        # class distribution matches the labeled distribution (ReMixMatch)
+        if self.distribution_alignment and self.distribution_ratio is not None:
+            probs_weak = probs_weak * self.distribution_ratio
+            probs_weak = probs_weak / probs_weak.sum(dim=1, keepdim=True)
+
         max_probs, pseudo_labels = torch.max(probs_weak, dim=1)
         confidence_mask = max_probs.ge(self.current_confidence_threshold).float()
         mask_ratio = confidence_mask.mean().item()
@@ -438,13 +447,79 @@ class FixMatchTrainer(BaseTrainer):
             confidence_mask,
         )
 
+    def save_checkpoint(self, epoch: int, auc: float, best: bool = False) -> None:
+        """Save checkpoint with full FixMatch state for proper resume."""
+        # Let BaseTrainer save the core state
+        super().save_checkpoint(epoch, auc, best)
+
+        # Determine the path that was just written
+        if best:
+            path = self.output_dir / "best_model.pth"
+        else:
+            path = self.output_dir / f"checkpoint_epoch_{epoch}.pth"
+
+        # Re-load, augment with SSL state, re-save
+        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+        checkpoint["ssl_state"] = {
+            "current_lambda_u": self.current_lambda_u,
+            "current_confidence_threshold": self.current_confidence_threshold,
+            "backbone_unfrozen": self.backbone_unfrozen,
+            "pseudo_label_distribution": self.pseudo_label_distribution,
+            "labeled_class_distribution": self.labeled_class_distribution,
+            "distribution_ratio": self.distribution_ratio,
+        }
+        if self.ema is not None:
+            checkpoint["ema_shadow"] = self.ema.shadow
+        torch.save(checkpoint, path)
+
+    def load_checkpoint(self, checkpoint_path: str | Path) -> int:
+        """Load checkpoint and restore full FixMatch state."""
+        epoch = super().load_checkpoint(checkpoint_path)
+
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+
+        # Restore SSL-specific state (with safe defaults for older checkpoints)
+        ssl_state = checkpoint.get("ssl_state", {})
+        if ssl_state:
+            self.current_lambda_u = ssl_state.get("current_lambda_u", self.current_lambda_u)
+            self.current_confidence_threshold = ssl_state.get(
+                "current_confidence_threshold", self.current_confidence_threshold
+            )
+            self.backbone_unfrozen = ssl_state.get("backbone_unfrozen", self.backbone_unfrozen)
+            self.pseudo_label_distribution = ssl_state.get(
+                "pseudo_label_distribution", self.pseudo_label_distribution
+            )
+            self.labeled_class_distribution = ssl_state.get(
+                "labeled_class_distribution", self.labeled_class_distribution
+            )
+            self.distribution_ratio = ssl_state.get("distribution_ratio", self.distribution_ratio)
+
+        # Restore EMA shadow weights
+        if self.ema is not None and "ema_shadow" in checkpoint:
+            self.ema.shadow = checkpoint["ema_shadow"]
+
+        return epoch
+
     def train(  # type: ignore[override]
         self,
         labeled_loader: DataLoader,
         unlabeled_loader: DataLoader,
         val_loader: DataLoader,
+        resume_from: str | Path | None = None,
     ) -> None:
-        """Main FixMatch training loop."""
+        """Main FixMatch training loop.
+
+        Args:
+            labeled_loader: DataLoader for labeled training data
+            unlabeled_loader: DataLoader for unlabeled training data
+            val_loader: DataLoader for validation data
+            resume_from: Path to checkpoint to resume from (optional)
+        """
+        start_epoch = 0
+        if resume_from is not None:
+            start_epoch = self.load_checkpoint(resume_from)
+            logger.info(f"Resumed from epoch {start_epoch}")
+
         # Format lambda_u info
         if self.lambda_u_ramp_epochs > 0:
             lambda_u_info = f"lambda_u={self.lambda_u_start}→{self.lambda_u_end} over {self.lambda_u_ramp_epochs} epochs"
@@ -458,22 +533,23 @@ class FixMatchTrainer(BaseTrainer):
             tau_info = f"tau={self.confidence_threshold}"
 
         logger.info(
-            f"Starting FixMatch training: {self.num_epochs} epochs on {self.device} "
+            f"Starting FixMatch training: epochs {start_epoch + 1}-{self.num_epochs} on {self.device} "
             f"(AMP={'on' if self.use_amp else 'off'}, "
             f"EMA={'on' if self.ema else 'off'}, "
             f"{tau_info}, {lambda_u_info})"
         )
 
         # Initialize distribution alignment if enabled
-        if self.distribution_alignment:
+        # (skip if already loaded from checkpoint)
+        if self.distribution_alignment and self.labeled_class_distribution is None:
             self._compute_labeled_class_distribution(labeled_loader)
-            self._compute_temperatures()
-            if self.current_temperatures is not None:
+            self._compute_distribution_ratio()
+            if self.distribution_ratio is not None:
                 logger.info(
-                    f"Initial temperature scaling T: {self.current_temperatures.cpu().numpy()}"
+                    f"Initial distribution ratio (π_l/π_p): {self.distribution_ratio.cpu().numpy()}"
                 )
 
-        for epoch in range(self.num_epochs):
+        for epoch in range(start_epoch, self.num_epochs):
             self._apply_warmup(epoch)
 
             # Unfreeze backbone if schedule reached
@@ -486,8 +562,9 @@ class FixMatchTrainer(BaseTrainer):
                     self.model.unfreeze_backbone()
                     self.backbone_unfrozen = True
                     logger.info(f"Unfrozen backbone at epoch {epoch + 1}")
-                    # Re-initialize optimizer to include backbone parameters
-                    # (parameters already have requires_grad=True, optimizer will see them)
+                    # Add newly-unfrozen params to EMA shadow so they get averaged
+                    if self.ema is not None:
+                        self.ema.refresh(self.model)
                 else:
                     logger.warning("Model does not have unfreeze_backbone method")
 
@@ -504,9 +581,11 @@ class FixMatchTrainer(BaseTrainer):
             # Validate (uses EMA model if available)
             if self.ema is not None:
                 self.ema.apply(self.model)
-            val_loss, val_metrics = self.validate(val_loader)
-            if self.ema is not None:
-                self.ema.restore(self.model)
+            try:
+                val_loss, val_metrics = self.validate(val_loader)
+            finally:
+                if self.ema is not None:
+                    self.ema.restore(self.model)
 
             # Update scheduler (after warmup)
             if epoch >= self.warmup_epochs and self.scheduler is not None:

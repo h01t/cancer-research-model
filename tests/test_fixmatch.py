@@ -5,6 +5,7 @@ All tests use synthetic data — no CBIS-DDSM dataset required.
 """
 
 import tempfile
+from pathlib import Path
 
 import pytest
 import torch
@@ -99,6 +100,30 @@ class TestEMAModel:
         restored_param = dict(model.named_parameters())[name].data.clone()
         assert torch.equal(original_param, restored_param)
 
+    def test_ema_refresh_after_unfreeze(self):
+        """EMA.refresh() should pick up newly-unfrozen parameters."""
+        model = EfficientNetClassifier(num_classes=2, pretrained=False, freeze_backbone=True)
+
+        # EMA only tracks classifier (requires_grad=True) params initially
+        ema = EMAModel(model, decay=0.999)
+        initial_count = len(ema.shadow)
+
+        # All backbone params are frozen → not in shadow
+        total_params = sum(1 for _, p in model.named_parameters() if p.requires_grad)
+        assert initial_count == total_params
+
+        # Unfreeze backbone
+        model.unfreeze_backbone()
+        total_after_unfreeze = sum(1 for _, p in model.named_parameters() if p.requires_grad)
+        assert total_after_unfreeze > initial_count
+
+        # Refresh EMA — should add the newly unfrozen params
+        ema.refresh(model)
+        assert len(ema.shadow) == total_after_unfreeze
+
+        # Verify EMA update works with the new params
+        ema.update(model)
+
 
 class TestFixMatchTrainer:
     """Test FixMatch trainer."""
@@ -170,3 +195,45 @@ class TestFixMatchTrainer:
             assert len(trainer.history["train_loss"]) == 2
             assert len(trainer.history["sup_loss"]) == 2
             assert len(trainer.history["mask_ratio"]) == 2
+
+    def test_checkpoint_roundtrip(self, base_config):
+        """FixMatch checkpoint should preserve all SSL state for proper resume."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_config["training"]["num_epochs"] = 2
+            base_config["ssl"]["use_ema"] = True
+            model = EfficientNetClassifier(num_classes=2, pretrained=False)
+            trainer = FixMatchTrainer(model, base_config, output_dir=tmpdir)
+
+            # Simulate some training state
+            trainer.current_lambda_u = 0.42
+            trainer.current_confidence_threshold = 0.78
+            trainer.backbone_unfrozen = True
+            trainer.best_val_auc = 0.75
+            trainer.epochs_without_improvement = 3
+            trainer.pseudo_label_distribution = torch.tensor([0.6, 0.4])
+            trainer.history["train_loss"].append(0.5)
+
+            # Save checkpoint
+            trainer.save_checkpoint(epoch=5, auc=0.75, best=True)
+
+            # Create a fresh trainer and load
+            model2 = EfficientNetClassifier(num_classes=2, pretrained=False)
+            trainer2 = FixMatchTrainer(model2, base_config, output_dir=tmpdir)
+
+            checkpoint_path = Path(tmpdir) / "best_model.pth"
+            epoch = trainer2.load_checkpoint(checkpoint_path)
+
+            assert epoch == 5
+            assert trainer2.best_val_auc == 0.75
+            assert trainer2.epochs_without_improvement == 3
+            assert trainer2.current_lambda_u == pytest.approx(0.42)
+            assert trainer2.current_confidence_threshold == pytest.approx(0.78)
+            assert trainer2.backbone_unfrozen is True
+            assert torch.allclose(
+                trainer2.pseudo_label_distribution.cpu(), torch.tensor([0.6, 0.4])
+            )
+            # EMA shadow should be restored
+            assert trainer2.ema is not None
+            assert len(trainer2.ema.shadow) > 0
+            # History should be restored
+            assert len(trainer2.history["train_loss"]) == 1

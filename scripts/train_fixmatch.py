@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader, Subset
 # Add project root to path (removed when pyproject.toml is set up in Phase 3)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data.dataset import CBISDDSMDataset, split_labeled_unlabeled
+from src.data.dataset import CBISDDSMDataset, patient_aware_split
 from src.data.ssl_dataset import (
     FixMatchLabeledDataset,
     FixMatchUnlabeledDataset,
@@ -90,17 +90,14 @@ def create_datasets(config: dict, num_labeled: int):
         data_dir=config["dataset"]["data_dir"],
     )
 
-    # Step 1: Hold out 15% as validation from the full pool
-    total = len(raw_dataset)
-    n_val = int(0.15 * total)
-    generator = torch.Generator().manual_seed(42)
-    perm = torch.randperm(total, generator=generator).tolist()
-    val_indices = perm[:n_val]
-    train_pool_indices = perm[n_val:]
+    # Step 1: Patient-aware split — no patient in both train and val sets.
+    # Uses the SAME seed and function as train_supervised.py for fair comparison.
+    val_fraction = config.get("training", {}).get("val_split_ratio", 0.15)
+    train_pool_indices, val_indices = patient_aware_split(
+        raw_dataset, val_fraction=val_fraction, seed=42
+    )
 
-    # Step 2: From the training pool, split into labeled/unlabeled
-    # We need to remap: split_labeled_unlabeled works on a Subset
-    # Instead, manually do class-balanced sampling from train_pool_indices
+    # Step 2: From the training pool, split into labeled/unlabeled (class-balanced)
     import random as _random
 
     rng = _random.Random(42)
@@ -300,9 +297,11 @@ def main():
     logger.info("Evaluating on test set...")
     if trainer.ema is not None:
         trainer.ema.apply(trainer.model)
-    test_metrics = trainer.evaluate(test_loader)
-    if trainer.ema is not None:
-        trainer.ema.restore(trainer.model)
+    try:
+        test_metrics = trainer.evaluate(test_loader)
+    finally:
+        if trainer.ema is not None:
+            trainer.ema.restore(trainer.model)
 
     print("\nTest metrics:")
     for key, value in test_metrics.items():

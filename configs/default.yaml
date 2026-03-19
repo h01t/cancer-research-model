@@ -5,7 +5,7 @@
 dataset:
   data_dir: "data"
   abnormality_type: "mass"  # mass, calc, both
-  image_size: 224
+  image_size: 512
   labeled_subset_size: null  # null = use all; integer = ablation subset
 
 # Model
@@ -18,7 +18,7 @@ model:
 
 # Training
 training:
-  batch_size: 16
+  batch_size: 8
   num_epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
@@ -26,7 +26,7 @@ training:
   optimizer: "adam"  # adam, adamw, sgd
   scheduler: "cosine"  # cosine, step, plateau, null
   warmup_epochs: 5
-  early_stopping_patience: 10
+  early_stopping_patience: 15
   num_workers: 20
   use_amp: true  # mixed precision training
   gradient_clipping: true
@@ -38,7 +38,7 @@ ssl:
   method: "fixmatch"
   confidence_threshold: 0.95  # tau: pseudo-label confidence threshold
   lambda_u: 1.0  # weight for unsupervised loss
-  unlabeled_batch_ratio: 7  # mu: unlabeled/labeled batch size ratio
+  unlabeled_batch_ratio: 2  # mu: unlabeled/labeled batch size ratio
   randaugment_n: 2  # RandAugment: number of transforms
   randaugment_m: 10  # RandAugment: magnitude (0-30)
   use_ema: true  # exponential moving average for pseudo-labels

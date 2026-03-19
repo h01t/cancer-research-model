@@ -8,7 +8,7 @@ dataset:
   abnormality_type: mass
   data_dir: data
   image_size: 224
-  labeled_subset_size: 10
+  labeled_subset_size: 4
 logging:
   log_freq: 1
   save_freq: 1
@@ -35,7 +35,7 @@ training:
   learning_rate: 0.001
   max_grad_norm: 1.0
   momentum: 0.9
-  num_epochs: 2
+  num_epochs: 1
   num_workers: 0
   optimizer: adam
   scheduler: cosine

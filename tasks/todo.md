@@ -37,11 +37,25 @@
 - [x] Create SSL dataset wrappers (FixMatchLabeledDataset, FixMatchUnlabeledDataset)
 - [x] Update README.md and documentation
 
+### v0.3.0 Correctness Fixes (completed)
+
+- [x] Patient-level data leakage fix (split by patient ID, not image index)
+- [x] EMA tracks frozen-then-unfrozen backbone params (ema.refresh())
+- [x] Complete FixMatch checkpoint save/load (EMA, scaler, ramp state, epoch, history)
+- [x] Fix distribution alignment formula (post-softmax per ReMixMatch)
+- [x] Add exception safety to EMA apply/restore (try/finally)
+- [x] Fix print() warning in dataset.py → logger.warning()
+- [x] Fix hardcoded blank image size (512 → 256 fallback)
+- [x] 10 new tests (patient split, EMA refresh, checkpoint roundtrip) — 52 total
+
 ## Next Steps
 
-- [ ] Run ablation study with labeled subsets (100, 250, 500) on CUDA workstation
+- [ ] Phase 2: Code quality (DRY refactor, extract shared utilities, remove dead code)
+- [ ] Phase 3: Test coverage gaps (dataset.py, distribution alignment, grad accumulation)
+- [ ] Phase 4: Housekeeping (.gitignore, stale files, optional deps, config docs)
+- [ ] Re-run ablation study with patient-aware splits on CUDA workstation
 - [ ] Update notebooks to work with refactored code
-- [ ] Update USER_GUIDE.md with actual results and v0.2 changes
+- [ ] Update USER_GUIDE.md with actual results and v0.3 changes
 
 ## Future Enhancements
 

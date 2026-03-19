@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader, Subset
 # Add project root to path (removed when pyproject.toml is set up in Phase 3)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data.dataset import CBISDDSMDataset
+from src.data.dataset import CBISDDSMDataset, patient_aware_split
 from src.data.ssl_dataset import TransformSubset
 from src.data.transforms import get_transforms
 from src.models.efficientnet import EfficientNetClassifier
@@ -79,14 +79,12 @@ def create_datasets(config: dict, labeled_subset_size: int | None = None):
         data_dir=config["dataset"]["data_dir"],
     )
 
-    # Deterministic split: hold out 15% for validation from the full pool
-    # Uses the SAME seed and logic as train_fixmatch.py so val sets are identical
-    total = len(raw_dataset)
-    n_val = int(0.15 * total)
-    generator = torch.Generator().manual_seed(42)
-    perm = torch.randperm(total, generator=generator).tolist()
-    val_indices = perm[:n_val]
-    train_pool_indices = perm[n_val:]
+    # Patient-aware split: no patient appears in both train and val sets.
+    # Uses the SAME seed and function as train_fixmatch.py for fair comparison.
+    val_fraction = config.get("training", {}).get("val_split_ratio", 0.15)
+    train_pool_indices, val_indices = patient_aware_split(
+        raw_dataset, val_fraction=val_fraction, seed=42
+    )
 
     if labeled_subset_size is not None:
         # Ablation mode: sample labeled_subset_size from the training pool (class-balanced)

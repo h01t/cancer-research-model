@@ -5,22 +5,24 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 ## Project Overview
 
 - **Dataset**: CBIS-DDSM — mammography images with benign/malignant labels
-- **Task**: Binary classification (benign vs malignant) using full mammograms at 512x512
-- **SSL Method**: FixMatch with confidence-thresholded pseudo-labeling + EMA
+- **Task**: Binary classification (benign vs malignant) using full mammograms at configurable resolution (default 512px)
+- **SSL Method**: FixMatch with confidence-thresholded pseudo-labeling + EMA + distribution alignment
 - **Model**: EfficientNet-B0 (torchvision, ImageNet pretrained)
 - **Evaluation**: AUC-ROC primary metric, with accuracy, F1, sensitivity, specificity
 - **Platform**: Develops on Apple Silicon (MPS), deploys on CUDA workstation via SSH
 
 ## Key Features
 
-- FixMatch semi-supervised learning with EMA teacher model
+- FixMatch semi-supervised learning with EMA teacher model and distribution alignment
 - Mixed precision training (AMP) for CUDA and MPS
 - LR warmup, gradient clipping, class-weighted loss
 - Config-driven augmentation pipeline
 - Ablation study across labeled data sizes (100, 250, 500 samples)
 - Per-experiment checkpoints and result isolation
 - W&B integration for experiment tracking (optional)
-- 42 unit tests with synthetic data (no real dataset required)
+- 52 unit tests with synthetic data (no real dataset required)
+- Patient-aware train/val/test splits (prevent data leakage)
+- Complete SSL state checkpoints (EMA, distribution alignment, ramp schedules)
 - Dual-device support: M4 Pro (dev) + CUDA workstation (training)
 
 ## Project Structure
@@ -46,7 +48,8 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 ├── configs/                  # YAML configuration files
 │   ├── default.yaml          # Full experiment config
 │   └── test.yaml             # Quick validation config
-├── tests/                    # Unit tests (42 tests, synthetic data)
+├── tests/                    # Unit tests (52 tests, synthetic data)
+├── tasks/                    # Project TODO and lessons learned
 ├── notebooks/                # Jupyter notebooks for analysis
 ├── pyproject.toml            # Python packaging and tool config
 ├── requirements.txt          # Dependencies
@@ -106,7 +109,7 @@ python scripts/train_supervised.py \
 
 # FixMatch SSL (100 labeled samples)
 python scripts/train_fixmatch.py \
-    --config configs/default.yaml \
+    --config configs/fixmatch.yaml \
     --labeled 100 \
     --output_dir results/fixmatch_100
 
@@ -127,7 +130,7 @@ python scripts/train_supervised.py --config configs/default.yaml --device cuda
 
 ## Configuration
 
-All parameters are in `configs/default.yaml`. Key settings:
+Supervised baseline parameters are in `configs/default.yaml`. SSL (FixMatch) parameters are in `configs/fixmatch.yaml`. Key settings:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -136,6 +139,10 @@ All parameters are in `configs/default.yaml`. Key settings:
 | `training.class_weighted_loss` | `true` | Inverse-frequency class weights |
 | `ssl.confidence_threshold` | `0.95` | Pseudo-label confidence threshold |
 | `ssl.use_ema` | `true` | EMA model for stable pseudo-labels |
+| `ssl.distribution_alignment` | `true` | ReMixMatch-style class distribution alignment |
+| `ssl.threshold_ramp` | `[0.7, 0.9, 40]` | Confidence threshold ramp [start, end, epochs] |
+| `ssl.lambda_u_ramp` | `[0.1, 0.5, 20]` | Unsupervised loss weight ramp [start, end, epochs] |
+| `ssl.backbone_unfreeze_epoch` | `5` | Epoch to unfreeze pretrained backbone |
 | `wandb.enabled` | `false` | W&B experiment tracking |
 
 ## SSH Workflow (Local Dev → Remote Training)
@@ -146,7 +153,7 @@ rsync -avz --exclude='.venv' --exclude='data' --exclude='results' \
     ./ user@workstation:~/ssl/
 
 # Run training remotely
-ssh user@workstation "cd ~/ssl && python scripts/train_fixmatch.py --config configs/default.yaml --labeled 100"
+ssh user@workstation "cd ~/ssl && python scripts/train_fixmatch.py --config configs/fixmatch.yaml --labeled 100"
 
 # Pull results back
 rsync -avz user@workstation:~/ssl/results/ ./results/
@@ -157,6 +164,7 @@ rsync -avz user@workstation:~/ssl/results/ ./results/
 - **Memory issues**: Reduce `training.batch_size` or `dataset.image_size` in config
 - **SSL certificate errors**: Set `model.pretrained: false` or download weights manually
 - **MPS issues**: Set `training.use_amp: false` if AMP causes issues on Apple Silicon
+- **Patient-aware splits**: Ensure train/val/test splits respect patient IDs to prevent data leakage
 
 ## License
 

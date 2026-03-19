@@ -1,0 +1,11 @@
+accuracy: 0.3961218836565097
+auc: 0.5
+f1: 0.5674603174603174
+fn: 0.0
+fp: 218.0
+precision: 0.3961218836565097
+recall: 1.0
+sensitivity: 1.0
+specificity: 0.0
+tn: 0.0
+tp: 143.0

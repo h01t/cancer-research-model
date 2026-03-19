@@ -399,25 +399,30 @@ class BaseTrainer:
         else:
             path = self.output_dir / f"checkpoint_epoch_{epoch}.pth"
 
-        torch.save(
-            {
-                "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": (self.scheduler.state_dict() if self.scheduler else None),
-                "auc": auc,
-                "best_val_auc": self.best_val_auc,
-                "history": self.history,
-                "config": self.config,
-            },
-            path,
-        )
+        checkpoint = {
+            "epoch": epoch,
+            "model_state_dict": self.model.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "scheduler_state_dict": (self.scheduler.state_dict() if self.scheduler else None),
+            "scaler_state_dict": (self.scaler.state_dict() if self.scaler else None),
+            "auc": auc,
+            "best_val_auc": self.best_val_auc,
+            "epochs_without_improvement": self.epochs_without_improvement,
+            "history": self.history,
+            "config": self.config,
+        }
+
+        torch.save(checkpoint, path)
 
         if best:
             print(f"  Best model saved (AUC: {auc:.4f})")
 
-    def load_checkpoint(self, checkpoint_path: str | Path) -> tuple[int, float]:
-        """Load model checkpoint (cross-device compatible)."""
+    def load_checkpoint(self, checkpoint_path: str | Path) -> int:
+        """Load model checkpoint (cross-device compatible).
+
+        Returns:
+            The epoch number the checkpoint was saved at (1-indexed).
+        """
         checkpoint = torch.load(
             checkpoint_path,
             map_location=self.device,
@@ -427,8 +432,12 @@ class BaseTrainer:
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         if self.scheduler and checkpoint.get("scheduler_state_dict"):
             self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        if self.scaler and checkpoint.get("scaler_state_dict"):
+            self.scaler.load_state_dict(checkpoint["scaler_state_dict"])
         self.best_val_auc = checkpoint.get("best_val_auc", 0.0)
-        return checkpoint["epoch"], checkpoint["auc"]
+        self.epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
+        self.history = checkpoint.get("history", self.history)
+        return checkpoint["epoch"]
 
     def evaluate(self, test_loader: DataLoader) -> dict[str, float]:
         """Evaluate model on test set."""
