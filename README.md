@@ -4,26 +4,26 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 
 ## Project Overview
 
-- **Dataset**: CBIS-DDSM — mammography images with benign/malignant labels
-- **Task**: Binary classification (benign vs malignant) using full mammograms at configurable resolution (default 512px)
-- **SSL Method**: FixMatch with confidence-thresholded pseudo-labeling + EMA + distribution alignment
+- **Dataset**: CBIS-DDSM -- mammography images with benign/malignant labels
+- **Task**: Binary classification (benign vs malignant) using full mammograms at 512px
+- **SSL Method**: FixMatch with confidence-thresholded pseudo-labeling + EMA teacher
 - **Model**: EfficientNet-B0 (torchvision, ImageNet pretrained)
 - **Evaluation**: AUC-ROC primary metric, with accuracy, F1, sensitivity, specificity
-- **Platform**: Develops on Apple Silicon (MPS), deploys on CUDA workstation via SSH
+- **Platform**: Develops on Apple Silicon (MPS), trains on CUDA workstation
 
 ## Key Features
 
-- FixMatch semi-supervised learning with EMA teacher model and distribution alignment
+- FixMatch semi-supervised learning with EMA teacher model
+- Conservative paper-aligned SSL config (tau=0.95, lambda_u=1.0)
 - Mixed precision training (AMP) for CUDA and MPS
-- LR warmup, gradient clipping, class-weighted loss
-- Config-driven augmentation pipeline
-- Ablation study across labeled data sizes (100, 250, 500 samples)
-- Per-experiment checkpoints and result isolation
+- LR warmup, gradient clipping, class-weighted loss, backbone freeze/unfreeze
+- Config-driven augmentation and training pipeline
+- Ablation study across labeled data sizes (100, 250, 500, full)
+- Patient-aware train/val splits (no data leakage between patients)
+- Complete SSL state checkpoints (EMA, ramp schedules, early stopping)
+- Per-experiment result isolation with training history CSV
 - W&B integration for experiment tracking (optional)
 - 52 unit tests with synthetic data (no real dataset required)
-- Patient-aware train/val/test splits (prevent data leakage)
-- Complete SSL state checkpoints (EMA, distribution alignment, ramp schedules)
-- Dual-device support: M4 Pro (dev) + CUDA workstation (training)
 
 ## Project Structure
 
@@ -31,26 +31,26 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 .
 ├── src/                      # Source code
 │   ├── data/
-│   │   ├── dataset.py        # CBIS-DDSM dataset loader
+│   │   ├── dataset.py        # CBIS-DDSM dataset loader + patient-aware splitting
 │   │   ├── ssl_dataset.py    # SSL dataset wrappers (FixMatch)
-│   │   └── transforms.py     # Augmentation pipeline
+│   │   └── transforms.py     # Augmentation pipeline (weak, strong, test)
 │   ├── models/
 │   │   └── efficientnet.py   # EfficientNet-B0 classifier
 │   └── training/
-│       ├── trainer.py        # Base trainer (AMP, warmup, grad clip)
+│       ├── trainer.py        # Base trainer (AMP, warmup, grad clip, checkpoints)
 │       ├── fixmatch_trainer.py  # FixMatch SSL trainer
-│       ├── ema.py            # Exponential Moving Average
+│       ├── ema.py            # Exponential Moving Average model
 │       └── metrics.py        # Classification metrics
-├── scripts/                  # Training and evaluation scripts
+├── scripts/                  # Training scripts
 │   ├── train_supervised.py   # Supervised baseline
-│   ├── train_fixmatch.py     # FixMatch SSL training
-│   └── debug/                # Dataset exploration scripts
+│   └── train_fixmatch.py     # FixMatch SSL training
 ├── configs/                  # YAML configuration files
-│   ├── default.yaml          # Full experiment config
-│   └── test.yaml             # Quick validation config
+│   ├── default.yaml          # Supervised baseline config (512px, batch 8)
+│   ├── fixmatch.yaml         # FixMatch config (paper-aligned, matches supervised base)
+│   └── test.yaml             # Quick validation config (224px, 2 epochs)
 ├── tests/                    # Unit tests (52 tests, synthetic data)
 ├── tasks/                    # Project TODO and lessons learned
-├── notebooks/                # Jupyter notebooks for analysis
+├── run_ablation.sh           # Full ablation study script (7 experiments)
 ├── pyproject.toml            # Python packaging and tool config
 ├── requirements.txt          # Dependencies
 └── USER_GUIDE.md             # Comprehensive usage guide
@@ -61,19 +61,13 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 ### 1. Environment Setup
 
 ```bash
-# Clone and create environment
 git clone <repository-url>
 cd ssl
 python -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 
-# For W&B experiment tracking (optional)
-pip install wandb
-
-# For development (tests, linting)
+# Development tools (tests, linting)
 pip install -e ".[dev]"
 ```
 
@@ -82,10 +76,7 @@ pip install -e ".[dev]"
 ```bash
 # Run tests (no dataset needed)
 python -m pytest tests/ -v
-
-# Or use the quick start script
-chmod +x quick_start.sh
-./quick_start.sh
+# Expected: 52 passed
 ```
 
 ### 3. Download Dataset
@@ -113,7 +104,7 @@ python scripts/train_fixmatch.py \
     --labeled 100 \
     --output_dir results/fixmatch_100
 
-# Full ablation study
+# Full ablation study (7 experiments: supervised + FixMatch at 100/250/500/full)
 ./run_ablation.sh
 ```
 
@@ -124,36 +115,49 @@ python scripts/train_fixmatch.py \
 python scripts/train_supervised.py --config configs/default.yaml
 
 # Explicit device
-python scripts/train_supervised.py --config configs/default.yaml --device mps
 python scripts/train_supervised.py --config configs/default.yaml --device cuda
+python scripts/train_supervised.py --config configs/default.yaml --device mps
 ```
 
 ## Configuration
 
-Supervised baseline parameters are in `configs/default.yaml`. SSL (FixMatch) parameters are in `configs/fixmatch.yaml`. Key settings:
+Two configs are provided. They share identical base hyperparameters so ablation results isolate the SSL effect cleanly.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `training.use_amp` | `true` | Mixed precision training |
-| `training.warmup_epochs` | `5` | Linear LR warmup |
-| `training.class_weighted_loss` | `true` | Inverse-frequency class weights |
-| `ssl.confidence_threshold` | `0.95` | Pseudo-label confidence threshold |
-| `ssl.use_ema` | `true` | EMA model for stable pseudo-labels |
-| `ssl.distribution_alignment` | `true` | ReMixMatch-style class distribution alignment |
-| `ssl.threshold_ramp` | `[0.7, 0.9, 40]` | Confidence threshold ramp [start, end, epochs] |
-| `ssl.lambda_u_ramp` | `[0.1, 0.5, 20]` | Unsupervised loss weight ramp [start, end, epochs] |
-| `ssl.backbone_unfreeze_epoch` | `5` | Epoch to unfreeze pretrained backbone |
-| `wandb.enabled` | `false` | W&B experiment tracking |
+**`configs/default.yaml`** -- supervised baseline:
 
-## SSH Workflow (Local Dev → Remote Training)
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `dataset.image_size` | 512 | Input resolution |
+| `training.batch_size` | 8 | Fits 8GB VRAM at 512px |
+| `training.learning_rate` | 0.001 | Adam optimizer |
+| `training.num_epochs` | 100 | Max epochs |
+| `training.warmup_epochs` | 5 | Linear LR warmup |
+| `training.early_stopping_patience` | 20 | Patience before stopping |
+| `model.freeze_backbone` | true | Freeze backbone for first 5 epochs |
+| `training.class_weighted_loss` | true | Inverse-frequency class weights |
+
+**`configs/fixmatch.yaml`** -- FixMatch SSL (differences from supervised only):
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `training.num_epochs` | 150 | More epochs for pseudo-label stabilization |
+| `training.early_stopping_patience` | 25 | More patience for SSL convergence |
+| `ssl.confidence_threshold` | 0.95 | Paper default -- only high-confidence pseudo-labels |
+| `ssl.lambda_u` | 1.0 | Paper default -- full unsupervised loss weight |
+| `ssl.use_ema` | true | EMA teacher for stable pseudo-labels |
+| `ssl.unlabeled_batch_ratio` | 2 | Unlabeled/labeled batch ratio (fits 8GB VRAM) |
+
+## SSH Workflow (Local Dev -> Remote Training)
 
 ```bash
 # Sync code to workstation
 rsync -avz --exclude='.venv' --exclude='data' --exclude='results' \
     ./ user@workstation:~/ssl/
 
-# Run training remotely
-ssh user@workstation "cd ~/ssl && python scripts/train_fixmatch.py --config configs/fixmatch.yaml --labeled 100"
+# Run overnight ablation
+ssh user@workstation
+cd ~/ssl && source .venv/bin/activate
+nohup ./run_ablation.sh 2>&1 &
 
 # Pull results back
 rsync -avz user@workstation:~/ssl/results/ ./results/
@@ -161,13 +165,13 @@ rsync -avz user@workstation:~/ssl/results/ ./results/
 
 ## Troubleshooting
 
-- **Memory issues**: Reduce `training.batch_size` or `dataset.image_size` in config
+- **Out of memory**: Reduce `training.batch_size` or `dataset.image_size` in config
 - **SSL certificate errors**: Set `model.pretrained: false` or download weights manually
 - **MPS issues**: Set `training.use_amp: false` if AMP causes issues on Apple Silicon
-- **Patient-aware splits**: Ensure train/val/test splits respect patient IDs to prevent data leakage
+- **Slow data loading**: Increase `training.num_workers` (up to CPU core count)
 
 ## License
 
-MIT License — see LICENSE file.
+MIT License -- see LICENSE file.
 
 For detailed instructions, see [USER_GUIDE.md](USER_GUIDE.md).

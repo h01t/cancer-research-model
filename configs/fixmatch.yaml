@@ -1,82 +1,74 @@
-# FixMatch-optimized configuration for SSL with limited labels
-# Merges best practices from Tier A/B experiments.
-# All parameters are actively read by the training pipeline.
+# FixMatch configuration — conservative, paper-aligned.
+#
+# Design principle: IDENTICAL base hyperparameters to default.yaml (supervised).
+# The ONLY differences are the SSL-specific additions:
+#   - More epochs + patience (pseudo-labels need time to stabilize)
+#   - Confidence-thresholded pseudo-labels (tau=0.95, per FixMatch paper)
+#   - EMA teacher for stable pseudo-label generation
+#   - Strong augmentation (RandAugment) on unlabeled data
+#
+# This isolates the SSL effect cleanly for ablation comparison.
 
 # Dataset
 dataset:
   data_dir: "data"
   abnormality_type: "mass"  # mass, calc, both
   image_size: 512
-  labeled_subset_size: null  # null = use all; integer = ablation subset
+  labeled_subset_size: null  # set via --labeled CLI arg
 
-# Model
+# Model — matches default.yaml exactly
 model:
   name: "efficientnet-b0"
   num_classes: 2
   pretrained: true
-  dropout_rate: 0.3          # increased regularization for small labeled sets
-  freeze_backbone: true      # freeze backbone for initial epochs
-  freeze_backbone_epochs: 5  # unfreeze after 5 epochs (sooner than Tier A's 10)
+  dropout_rate: 0.2            # same as supervised
+  freeze_backbone: true        # same as supervised
+  freeze_backbone_epochs: 5    # same as supervised
 
-# Training (optimized for SSL with limited labels)
+# Training — matches default.yaml except epochs/patience
 training:
-  batch_size: 8              # matches default.yaml, fits 8GB VRAM at 512px
-  num_epochs: 150            # more epochs for pseudo-label stabilization
-  learning_rate: 0.0003      # lower than supervised (was 0.001)
-  weight_decay: 0.0005       # balanced regularization (Tier B used 0.001, too high)
-  momentum: 0.9              # for SGD only
-  optimizer: "adam"          # adam, adamw, sgd
-  scheduler: "cosine"        # cosine, step, plateau, null
-  warmup_epochs: 10          # longer warmup (was 5)
-  early_stopping_patience: 25 # more patience (was 15 for supervised)
+  batch_size: 8                # same as supervised
+  num_epochs: 150              # more epochs: pseudo-labels need time to kick in
+  learning_rate: 0.001         # same as supervised
+  weight_decay: 0.0001         # same as supervised
+  momentum: 0.9                # for SGD only
+  optimizer: "adam"            # same as supervised
+  scheduler: "cosine"          # same as supervised
+  warmup_epochs: 5             # same as supervised
+  early_stopping_patience: 25  # more patience: SSL convergence is slower
   num_workers: 20
-  use_amp: true              # mixed precision training
+  use_amp: true                # mixed precision training
   gradient_clipping: true
   max_grad_norm: 1.0
-  class_weighted_loss: true  # inverse-frequency class weighting
-  label_smoothing: 0.05      # gentle smoothing (Tier B used 0.1, too strong)
-  gradient_accumulation_steps: 2  # effective batch size 16
+  class_weighted_loss: true    # same as supervised
 
-# SSL (FixMatch) - optimized parameters
+# SSL (FixMatch) — paper defaults, no bells and whistles
 ssl:
   method: "fixmatch"
-  # Confidence threshold scheduling (Tier B adaptive threshold)
-  confidence_threshold: 0.70  # tau: base value (start of ramp)
-  confidence_threshold_start: 0.70
-  confidence_threshold_end: 0.90
-  confidence_threshold_ramp_epochs: 40  # linear ramp 0.70→0.90 over 40 epochs
-  # Lambda_u scheduling (Tier A ramp)
-  lambda_u: 0.5               # base value (end of ramp)
-  lambda_u_start: 0.1
-  lambda_u_end: 0.5
-  lambda_u_ramp_epochs: 20    # linear ramp 0.1→0.5 over 20 epochs
-  # Batch size ratio
-  unlabeled_batch_ratio: 2    # mu: unlabeled/labeled batch size ratio (matches default)
-  # RandAugment
-  randaugment_n: 2            # RandAugment: number of transforms
-  randaugment_m: 10           # RandAugment: magnitude (0-30)
-  # EMA for pseudo-labels
-  use_ema: true               # exponential moving average for pseudo-labels
-  ema_decay: 0.999            # EMA decay rate
-  # Distribution alignment (Tier A)
-  distribution_alignment: true  # ReMixMatch-style distribution alignment
-  temperature_smoothing: 0.01   # smoothing factor for ratio computation
+  confidence_threshold: 0.95   # tau: paper default. Only high-confidence pseudo-labels.
+  lambda_u: 1.0                # paper default. Full weight on unsupervised loss.
+  unlabeled_batch_ratio: 2     # mu: fits 8GB VRAM at 512px
+  randaugment_n: 2             # RandAugment: number of transforms
+  randaugment_m: 10            # RandAugment: magnitude (0-30)
+  use_ema: true                # EMA teacher for stable pseudo-labels
+  ema_decay: 0.999             # standard EMA decay
+  distribution_alignment: false # disabled for conservative baseline
 
-# Data augmentation
+# Data augmentation — matches default.yaml exactly
 augmentation:
   weak:
     random_horizontal_flip: true
     random_vertical_flip: true
-    random_rotation: 5        # degrees
-    color_jitter: 0.1         # brightness/contrast/saturation variation
+    random_rotation: 5         # degrees
+    color_jitter: 0.1          # brightness/contrast/saturation variation
 
 # Logging and checkpoints (per-experiment, inside output_dir)
 logging:
-  save_freq: 10               # save checkpoint every N epochs
-  log_freq: 10                # log metrics every N batches
+  save_freq: 10                # save checkpoint every N epochs
+  log_freq: 10                 # log metrics every N batches
 
 # Weights & Biases (optional)
 wandb:
   enabled: false
   project: "ssl-mammography"
-  run_name: null              # auto-generated if null
+  run_name: null               # auto-generated if null

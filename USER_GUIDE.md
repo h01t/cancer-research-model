@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This guide covers reproducing the semi-supervised learning (SSL) experiments on the CBIS-DDSM mammography dataset using the FixMatch algorithm. The project demonstrates how SSL improves classification performance when labeled medical imaging data is scarce.
+This guide covers reproducing the semi-supervised learning (SSL) experiments on the CBIS-DDSM mammography dataset using the FixMatch algorithm. The project demonstrates how SSL can improve classification performance when labeled medical imaging data is scarce.
 
 ### Research Context
 - **Problem**: Limited labeled medical imaging data due to annotation costs and privacy concerns
@@ -23,7 +23,8 @@ This guide covers reproducing the semi-supervised learning (SSL) experiments on 
 
 | Component | Minimum | Recommended | Notes |
 |-----------|---------|-------------|-------|
-| **GPU** | Apple M1 (8GB) / GTX 1080 (8GB) | M4 Pro (48GB) / RTX 3090 (24GB) | MPS or CUDA backend |
+| **GPU** | GTX 1080 (8GB) | RTX 3090 (24GB) | CUDA backend for training |
+| **Dev GPU** | Apple M1 (8GB) | M4 Pro (48GB) | MPS backend for development |
 | **CPU** | 4 cores | 8+ cores | Data loading and augmentation |
 | **RAM** | 16 GB | 32+ GB | Dataset loading and model training |
 | **Storage** | 15 GB free | 50 GB free | Dataset (~6GB) + checkpoints + results |
@@ -44,17 +45,18 @@ This guide covers reproducing the semi-supervised learning (SSL) experiments on 
 
 Device is auto-detected at runtime (CUDA > MPS > CPU). Override with `--device`:
 ```bash
-python scripts/train_supervised.py --device mps
 python scripts/train_supervised.py --device cuda
+python scripts/train_supervised.py --device mps
 ```
 
 ### 2.4 Performance Estimates
 
-| Experiment | GPU Memory | Time (CUDA) | Time (MPS) |
-|------------|------------|-------------|------------|
-| Quick test (224px, 10 samples, 2 epochs) | 2-4 GB | 2-5 min | 5-10 min |
-| Ablation (512px, 100 labeled, 100 epochs) | 6-8 GB | 2-4 hours | 4-8 hours |
-| Full data (512px, all labels, 100 epochs) | 10-12 GB | 8-12 hours | N/A |
+| Experiment | GPU Memory | Time (CUDA 8GB) | Time (MPS) |
+|------------|------------|------------------|------------|
+| Quick test (224px, 2 epochs) | 2-4 GB | 2-5 min | 5-10 min |
+| Supervised (512px, 100 labels, 100 epochs) | ~6 GB | 10-15 min | 30-60 min |
+| FixMatch (512px, 100 labels, 150 epochs) | ~7 GB | 45-90 min | 2-4 hours |
+| Full ablation (7 experiments) | ~7 GB | 6-8 hours | Not recommended |
 
 ---
 
@@ -63,7 +65,6 @@ python scripts/train_supervised.py --device cuda
 ### 3.1 Environment Setup
 
 ```bash
-# Clone and create virtual environment
 git clone <repository-url>
 cd ssl
 python -m venv .venv
@@ -95,7 +96,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-Expected: 42 tests pass. All tests use synthetic data.
+Expected: **52 tests pass**. All tests use synthetic data -- no CBIS-DDSM dataset needed.
 
 ### 3.4 Verify Device
 
@@ -149,12 +150,12 @@ data/
 
 | Split | Type | Total | Malignant | Benign | Patients |
 |-------|------|-------|-----------|--------|----------|
-| Train | Mass | 1,231 | 637 | 594 | 692 |
-| Test | Mass | 361 | 147 | 214 | 202 |
-| Train | Calc | 1,227 | 544 | 683 | 603 |
-| Test | Calc | 261 | 129 | 132 | 152 |
+| Train | Mass | 1,231 | 637 | 594 | ~691 |
+| Test | Mass | 361 | 143 | 218 | ~202 |
 
 The "mass" abnormality type is used by default. Labels are binary: `MALIGNANT` (1) vs `BENIGN`/`BENIGN_WITHOUT_CALLBACK` (0).
+
+**Patient-aware splitting**: The train set is split into train/val by patient ID (not image index), ensuring no patient appears in both sets. This prevents data leakage from multi-view mammograms of the same patient. The test set uses CBIS-DDSM's official predefined split.
 
 ### 4.4 Validate Dataset Loading
 
@@ -179,10 +180,13 @@ print(f'Shape: {img.shape}, Label: {label}')
 
 ### 5.1 Configuration Files
 
-- `configs/default.yaml` — Full experiment settings (512px, 100 epochs, all features enabled)
-- `configs/test.yaml` — Quick validation (224px, 2 epochs, AMP off, no pretrained weights)
+| File | Purpose |
+|------|---------|
+| `configs/default.yaml` | Supervised baseline (512px, batch 8, 100 epochs) |
+| `configs/fixmatch.yaml` | FixMatch SSL -- paper-aligned, identical base params to supervised |
+| `configs/test.yaml` | Quick validation (224px, 2 epochs, AMP off, no pretrained weights) |
 
-Every config parameter is actively used by the code. No dead keys.
+**Design principle**: `default.yaml` and `fixmatch.yaml` share identical base hyperparameters (LR, weight decay, dropout, augmentation, backbone freeze schedule). The only differences in `fixmatch.yaml` are the SSL-specific additions (more epochs/patience, pseudo-labels, EMA). This isolates the SSL effect for clean ablation comparison.
 
 ### 5.2 Key Parameters
 
@@ -202,33 +206,37 @@ model:
   num_classes: 2
   pretrained: true
   dropout_rate: 0.2
-  freeze_backbone: false      # freeze for transfer learning
+  freeze_backbone: true        # freeze backbone for initial epochs
+  freeze_backbone_epochs: 5    # unfreeze after 5 epochs
 ```
 
 #### Training
 ```yaml
 training:
-  batch_size: 32
-  num_epochs: 100
+  batch_size: 8                # fits 8GB VRAM at 512px
+  num_epochs: 100              # 150 for FixMatch
   learning_rate: 0.001
+  weight_decay: 0.0001
   optimizer: "adam"            # adam, adamw, sgd
   scheduler: "cosine"         # cosine, step, plateau, null
   warmup_epochs: 5            # linear LR warmup
+  early_stopping_patience: 20 # 25 for FixMatch
   use_amp: true               # mixed precision training
   gradient_clipping: true
   max_grad_norm: 1.0
   class_weighted_loss: true   # inverse-frequency weighting
-  num_workers: 4
+  num_workers: 20
 ```
 
 #### SSL (FixMatch)
 ```yaml
 ssl:
-  confidence_threshold: 0.95  # pseudo-label confidence gate
-  lambda_u: 1.0               # unsupervised loss weight
-  unlabeled_batch_ratio: 7    # unlabeled/labeled batch size ratio
-  use_ema: true                # EMA model for pseudo-labels
+  confidence_threshold: 0.95  # paper default -- only high-confidence pseudo-labels
+  lambda_u: 1.0               # paper default -- full unsupervised loss weight
+  unlabeled_batch_ratio: 2    # unlabeled/labeled batch ratio (fits 8GB VRAM)
+  use_ema: true               # EMA model for stable pseudo-labels
   ema_decay: 0.999
+  distribution_alignment: false  # disabled for conservative baseline
   randaugment_n: 2
   randaugment_m: 10
 ```
@@ -239,8 +247,8 @@ augmentation:
   weak:
     random_horizontal_flip: true
     random_vertical_flip: true
-    random_rotation: 5
-    color_jitter: 0.1
+    random_rotation: 5         # degrees
+    color_jitter: 0.1          # brightness/contrast/saturation
 ```
 
 #### Weights & Biases (optional)
@@ -248,16 +256,16 @@ augmentation:
 wandb:
   enabled: false
   project: "ssl-mammography"
-  run_name: null
+  run_name: null               # auto-generated if null
 ```
 
 ### 5.3 Parameter Sensitivity
 
 | Parameter | Range | Effect | Default |
 |-----------|-------|--------|---------|
-| `confidence_threshold` | 0.90-0.99 | Higher = fewer, better pseudo-labels | 0.95 |
+| `confidence_threshold` | 0.90-0.99 | Higher = fewer but more reliable pseudo-labels | 0.95 |
 | `lambda_u` | 0.5-2.0 | Unsupervised loss weight | 1.0 |
-| `unlabeled_batch_ratio` | 3-10 | Unlabeled samples per labeled batch | 7 |
+| `unlabeled_batch_ratio` | 2-7 | Unlabeled samples per labeled batch | 2 |
 | `learning_rate` | 1e-4 to 1e-2 | Convergence speed | 0.001 |
 | `image_size` | 224-1024 | Detail vs memory/speed | 512 |
 | `ema_decay` | 0.99-0.9999 | EMA smoothing (higher = slower update) | 0.999 |
@@ -279,7 +287,7 @@ python scripts/train_supervised.py \
 ### 6.2 Supervised Baseline
 
 ```bash
-# Full training data
+# Full training data (upper bound)
 python scripts/train_supervised.py \
   --config configs/default.yaml \
   --output_dir results/supervised_full
@@ -295,29 +303,43 @@ python scripts/train_supervised.py \
 
 ```bash
 python scripts/train_fixmatch.py \
-  --config configs/default.yaml \
+  --config configs/fixmatch.yaml \
   --labeled 100 \
   --output_dir results/fixmatch_100
 ```
 
-### 6.4 Ablation Study
+### 6.4 Full Ablation Study
 
-Run all subset sizes (100, 250, 500) for both methods:
+The ablation script runs all 7 experiments sequentially -- designed for overnight runs on a CUDA workstation:
 
 ```bash
+# Default: results go to results/
 chmod +x run_ablation.sh
-./run_ablation.sh --config configs/default.yaml --output results
+./run_ablation.sh
+
+# Custom output directory
+./run_ablation.sh -o results_v2
+
+# Run in background (survives SSH disconnect)
+nohup ./run_ablation.sh -o results 2>&1 &
+
+# Monitor progress
+tail -f results/ablation.log
 ```
 
-Or manually:
-```bash
-for n in 100 250 500; do
-  python scripts/train_supervised.py --config configs/default.yaml \
-    --labeled_subset $n --output_dir results/supervised_$n
-  python scripts/train_fixmatch.py --config configs/default.yaml \
-    --labeled $n --output_dir results/fixmatch_$n
-done
-```
+**Experiments run by the ablation script:**
+
+| # | Type | Labels | Output Dir |
+|---|------|--------|------------|
+| 1 | Supervised | 100 | `results/supervised_100` |
+| 2 | Supervised | 250 | `results/supervised_250` |
+| 3 | Supervised | 500 | `results/supervised_500` |
+| 4 | Supervised | ALL | `results/supervised_full` |
+| 5 | FixMatch | 100 | `results/fixmatch_100` |
+| 6 | FixMatch | 250 | `results/fixmatch_250` |
+| 7 | FixMatch | 500 | `results/fixmatch_500` |
+
+The script logs timestamps, continues past individual failures, and prints a summary table at the end.
 
 ### 6.5 Training Output
 
@@ -327,11 +349,13 @@ results/fixmatch_100/
 ├── config.yaml              # Experiment config snapshot
 ├── best_model.pth           # Best model (by val AUC)
 ├── checkpoint_epoch_10.pth  # Periodic checkpoints
-├── test_metrics.yaml        # Final test metrics
-└── training_history.csv     # Per-epoch: loss, acc, auc, lr, mask_ratio, etc.
+├── test_metrics.yaml        # Final test set metrics
+└── training_history.csv     # Per-epoch metrics
 ```
 
-FixMatch history CSV includes extra columns: `sup_loss`, `unsup_loss`, `mask_ratio`.
+**Supervised history columns**: `train_loss`, `val_loss`, `train_acc`, `val_acc`, `train_auc`, `val_auc`, `learning_rate`
+
+**FixMatch history columns**: all of the above plus `sup_loss`, `unsup_loss`, `mask_ratio`, `lambda_u`
 
 ### 6.6 W&B Experiment Tracking
 
@@ -343,7 +367,7 @@ wandb:
   run_name: "fixmatch-100-v1"
 ```
 
-Or stay with CSV logging (default). Both work. W&B is useful for comparing runs across your local Mac and CUDA workstation.
+Or stay with CSV logging (default). Both work independently.
 
 ---
 
@@ -375,12 +399,12 @@ pip install -r requirements.txt
 ```bash
 # Interactive
 ssh user@workstation "cd ~/ssl && source .venv/bin/activate && \
-  python scripts/train_fixmatch.py --config configs/default.yaml --labeled 100"
+  python scripts/train_fixmatch.py --config configs/fixmatch.yaml --labeled 100"
 
-# Background (survives SSH disconnect)
-ssh user@workstation "cd ~/ssl && source .venv/bin/activate && \
-  nohup python scripts/train_fixmatch.py --config configs/default.yaml \
-  --labeled 100 --output_dir results/fixmatch_100 > train.log 2>&1 &"
+# Background overnight run
+ssh user@workstation
+cd ~/ssl && source .venv/bin/activate
+nohup ./run_ablation.sh 2>&1 &
 ```
 
 ### 7.4 Pull Results Back
@@ -427,30 +451,29 @@ print(f"Sensitivity improvement: {ssl['sensitivity'] - sup['sensitivity']:.3f}")
 ### 8.3 SSL-Specific Metrics
 
 FixMatch training history includes:
-- **mask_ratio**: Fraction of unlabeled samples above confidence threshold (expect 0.0 early, rising to 0.3-0.7)
+- **mask_ratio**: Fraction of unlabeled samples above confidence threshold. With tau=0.95, expect 0.0 for early epochs (model not confident enough), gradually rising as the model improves. Healthy range: 0.1-0.5 after warmup.
 - **sup_loss**: Supervised loss on labeled data
 - **unsup_loss**: Consistency loss on pseudo-labeled data
 
-Low mask_ratio throughout training suggests the threshold is too high or the model is not learning useful representations.
+**Warning signs**:
+- mask_ratio near 0.0 throughout training: model never becomes confident enough. Consider lowering threshold.
+- mask_ratio shoots to 0.5+ in early epochs: threshold too low, pseudo-labels are unreliable noise.
+- Train AUC near 1.0 but val AUC stuck below 0.6: overfitting to labeled set, pseudo-labels reinforcing errors.
+
+### 8.4 Overfitting Indicators
+
+| Train-Val AUC Gap | Severity | Action |
+|-------------------|----------|--------|
+| < 0.10 | Healthy | None |
+| 0.10 - 0.20 | Mild | Monitor, may resolve with more epochs |
+| 0.20 - 0.30 | Significant | Consider more regularization |
+| > 0.30 | Severe | Reduce model capacity, add dropout, reduce LR |
 
 ---
 
 ## 9. Visualization
 
-### 9.1 Jupyter Notebooks
-
-| Notebook | Purpose |
-|----------|---------|
-| `01_data_exploration.ipynb` | Dataset statistics, class distribution, sample images |
-| `02_training_curves.ipynb` | Loss/accuracy/AUC curves, SSL vs supervised comparison |
-| `03_embeddings.ipynb` | t-SNE/UMAP of learned features, class separation |
-| `04_model_interpretation.ipynb` | Grad-CAM, confidence distributions, calibration |
-
-```bash
-jupyter notebook notebooks/
-```
-
-### 9.2 Quick Training Curve Plot
+### 9.1 Quick Training Curve Plot
 
 ```python
 import pandas as pd
@@ -473,6 +496,32 @@ plt.tight_layout()
 plt.savefig('training_curves.png')
 ```
 
+### 9.2 Ablation Comparison Table
+
+```python
+import yaml
+from pathlib import Path
+
+experiments = [
+    ('Supervised 100', 'results/supervised_100'),
+    ('Supervised 250', 'results/supervised_250'),
+    ('Supervised 500', 'results/supervised_500'),
+    ('Supervised Full', 'results/supervised_full'),
+    ('FixMatch 100', 'results/fixmatch_100'),
+    ('FixMatch 250', 'results/fixmatch_250'),
+    ('FixMatch 500', 'results/fixmatch_500'),
+]
+
+print(f"{'Experiment':<20} {'AUC':>6} {'Acc':>6} {'F1':>6} {'Sens':>6} {'Spec':>6}")
+print('-' * 62)
+for name, path in experiments:
+    metrics_file = Path(path) / 'test_metrics.yaml'
+    if metrics_file.exists():
+        m = yaml.safe_load(metrics_file.read_text())
+        print(f"{name:<20} {m['auc']:>6.3f} {m['accuracy']:>6.3f} {m['f1']:>6.3f} "
+              f"{m['sensitivity']:>6.3f} {m['specificity']:>6.3f}")
+```
+
 ---
 
 ## 10. Troubleshooting
@@ -489,9 +538,10 @@ PYTHONHTTPSVERIFY=0 python scripts/train_supervised.py ...
 
 ### Out of Memory
 
-1. Reduce `training.batch_size` (16 or 8)
+1. Reduce `training.batch_size` (4 for 512px, 8 for 224px)
 2. Reduce `dataset.image_size` (224 instead of 512)
-3. AMP is enabled by default (`training.use_amp: true`) — this already halves memory
+3. AMP is enabled by default (`training.use_amp: true`) -- this already halves memory
+4. Reduce `ssl.unlabeled_batch_ratio` (1 instead of 2)
 
 ### NaN Loss
 
@@ -502,7 +552,7 @@ Gradient clipping is enabled by default (`training.gradient_clipping: true`, `ma
 ### Slow Data Loading
 
 1. Increase `training.num_workers` (up to CPU core count)
-2. Note: `pin_memory` is automatically enabled only for CUDA (incompatible with MPS)
+2. `pin_memory` is automatically enabled only for CUDA (incompatible with MPS)
 
 ### MPS-Specific Issues
 
@@ -557,7 +607,19 @@ DataLoaders  ->  FixMatchTrainer
 
 Key principle: the dataset returns **raw PIL images**. All augmentation is applied by wrapper datasets, ensuring each pipeline gets exactly the transforms it needs.
 
-### 11.2 Training Features
+### 11.2 Patient-Aware Splitting
+
+The `patient_aware_split()` function in `src/data/dataset.py` ensures no patient appears in both train and val sets. In medical imaging, the same patient may have multiple images (left/right breast, CC/MLO views). Splitting by image index would leak patient-specific features into validation, inflating metrics.
+
+The split is:
+1. Group images by `patient_id` from the case-description CSV
+2. Stratify patients by majority label (benign vs malignant)
+3. Assign ~15% of patients to validation, rest to train
+4. Deterministic with seed=42
+
+Both `train_supervised.py` and `train_fixmatch.py` use the same split function and seed, ensuring identical validation sets for fair comparison.
+
+### 11.3 Training Features
 
 | Feature | Where | Config Key |
 |---------|-------|------------|
@@ -565,12 +627,15 @@ Key principle: the dataset returns **raw PIL images**. All augmentation is appli
 | Linear LR warmup | `BaseTrainer._apply_warmup()` | `training.warmup_epochs` |
 | Gradient clipping | `BaseTrainer.train_epoch()` | `training.gradient_clipping`, `max_grad_norm` |
 | Class-weighted loss | `BaseTrainer.__init__()` | `training.class_weighted_loss` |
+| Backbone freeze/unfreeze | `EfficientNetClassifier` | `model.freeze_backbone`, `freeze_backbone_epochs` |
 | EMA teacher model | `FixMatchTrainer` + `EMAModel` | `ssl.use_ema`, `ssl.ema_decay` |
+| EMA refresh on unfreeze | `FixMatchTrainer.train()` | Automatic when backbone unfreezes |
 | Pseudo-label logging | `FixMatchTrainer.train_epoch_ssl()` | Always on (mask_ratio, sup/unsup loss) |
+| Checkpoint resume | `FixMatchTrainer.train(resume_from=...)` | Full SSL state preserved |
 | W&B integration | `BaseTrainer._init_wandb()` | `wandb.enabled` |
 | Per-experiment checkpoints | `BaseTrainer.save_checkpoint()` | Saves to `--output_dir` |
 
-### 11.3 Extending with New SSL Methods
+### 11.4 Extending with New SSL Methods
 
 1. Subclass `BaseTrainer`:
 ```python
@@ -608,12 +673,12 @@ pip install wandb                  # optional
 pip install -e ".[dev]"            # optional
 
 # ---- Tests ----
-python -m pytest tests/ -v         # 42 tests, no dataset needed
+python -m pytest tests/ -v         # 52 tests, no dataset needed
 
 # ---- Training ----
 python scripts/train_supervised.py --config configs/default.yaml --labeled_subset 100 --output_dir results/sup_100
-python scripts/train_fixmatch.py   --config configs/default.yaml --labeled 100 --output_dir results/fm_100
-./run_ablation.sh                  # full ablation study
+python scripts/train_fixmatch.py   --config configs/fixmatch.yaml --labeled 100 --output_dir results/fm_100
+./run_ablation.sh                  # full ablation study (7 experiments)
 
 # ---- Options ----
 --max_epochs 50                    # override epoch count
@@ -622,7 +687,7 @@ python scripts/train_fixmatch.py   --config configs/default.yaml --labeled 100 -
 
 # ---- SSH Workflow ----
 rsync -avz --exclude='.venv' --exclude='data' ./ user@workstation:~/ssl/
-ssh user@workstation "cd ~/ssl && python scripts/train_fixmatch.py --labeled 100"
+ssh user@workstation "cd ~/ssl && nohup ./run_ablation.sh 2>&1 &"
 rsync -avz user@workstation:~/ssl/results/ ./results/
 ```
 
@@ -630,16 +695,18 @@ rsync -avz user@workstation:~/ssl/results/ ./results/
 
 | File | Purpose |
 |------|---------|
-| `configs/default.yaml` | Full experiment config |
+| `configs/default.yaml` | Supervised baseline config |
+| `configs/fixmatch.yaml` | FixMatch SSL config (paper-aligned) |
 | `configs/test.yaml` | Quick validation config |
 | `scripts/train_supervised.py` | Supervised baseline training |
 | `scripts/train_fixmatch.py` | FixMatch SSL training |
+| `run_ablation.sh` | Full ablation study (7 experiments) |
 | `src/training/trainer.py` | Base trainer (AMP, warmup, etc.) |
 | `src/training/fixmatch_trainer.py` | FixMatch implementation |
 | `src/training/ema.py` | EMA model utility |
-| `src/data/dataset.py` | CBIS-DDSM dataset loader |
+| `src/data/dataset.py` | CBIS-DDSM dataset loader + patient-aware split |
 | `src/data/ssl_dataset.py` | SSL dataset wrappers |
 | `src/data/transforms.py` | Augmentation pipeline |
 | `src/models/efficientnet.py` | EfficientNet-B0 classifier |
-
-*Last updated: March 2026*
+| `tasks/todo.md` | Project TODO and version history |
+| `tasks/lessons.md` | Patterns and anti-patterns discovered |
