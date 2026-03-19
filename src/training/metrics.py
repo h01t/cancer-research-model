@@ -72,6 +72,33 @@ def compute_metrics(
     return metrics
 
 
+def find_best_threshold(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    min_threshold: float = 0.0,
+    max_threshold: float = 1.0,
+    num_thresholds: int = 201,
+) -> tuple[float, dict[str, float]]:
+    """Select a binary decision threshold using Youden's J statistic."""
+    thresholds = np.linspace(min_threshold, max_threshold, num_thresholds)
+    best_threshold = 0.5
+    best_metrics: dict[str, float] | None = None
+    best_score = float("-inf")
+
+    for threshold in thresholds:
+        y_pred = (y_prob >= threshold).astype(int)
+        metrics = compute_metrics(y_true, y_pred, y_prob)
+        score = metrics["sensitivity"] + metrics["specificity"] - 1.0
+        if score > best_score:
+            best_score = score
+            best_threshold = float(threshold)
+            best_metrics = metrics
+
+    assert best_metrics is not None
+    best_metrics["youden_j"] = best_score
+    return best_threshold, best_metrics
+
+
 def aggregate_metrics(metrics_list: list[dict[str, float]]) -> dict[str, float]:
     """Aggregate metrics across multiple runs/folds.
 

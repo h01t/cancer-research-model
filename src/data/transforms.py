@@ -8,7 +8,10 @@ Design:
 - Factory function `get_transforms()` is the public API
 """
 
+import random
+
 import torchvision.transforms as T
+import torchvision.transforms.functional as TF
 
 
 # ImageNet normalization (used for pretrained EfficientNet)
@@ -64,9 +67,9 @@ class WeakAugmentation:
 
 
 class StrongAugmentation:
-    """Strong augmentation: RandAugment + cutout.
+    """Mild, mammography-safe strong augmentation.
 
-    Used for FixMatch strong view (consistency target).
+    Used for FixMatch strong view and Mean Teacher student view.
     """
 
     def __init__(
@@ -74,26 +77,60 @@ class StrongAugmentation:
         image_size: int = 512,
         n: int = 2,
         m: int = 10,
-        cutout_prob: float = 0.5,
-        cutout_size: float = 0.25,
+        random_horizontal_flip: bool = True,
+        random_rotation: float = 8.0,
+        translate: tuple[float, float] = (0.05, 0.05),
+        brightness: float = 0.08,
+        contrast: float = 0.12,
     ):
-        self.transform = T.Compose(
+        transforms = [T.Resize((image_size, image_size))]
+
+        if random_horizontal_flip:
+            transforms.append(T.RandomHorizontalFlip(p=0.5))
+
+        if random_rotation > 0 or translate != (0.0, 0.0):
+            transforms.append(T.RandomAffine(degrees=random_rotation, translate=translate))
+
+        if brightness > 0 or contrast > 0:
+            transforms.append(
+                IntensityJitter(
+                    brightness=brightness,
+                    contrast=contrast,
+                )
+            )
+
+        transforms.extend(
             [
-                T.Resize((image_size, image_size)),
-                T.RandAugment(num_ops=n, magnitude=m),
                 T.ToTensor(),
                 T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-                T.RandomErasing(
-                    p=cutout_prob,
-                    scale=(cutout_size * 0.5, cutout_size),
-                    ratio=(0.3, 3.3),
-                    value=0,
-                ),
             ]
         )
 
+        self.transform = T.Compose(transforms)
+
     def __call__(self, img):
         return self.transform(img)
+
+
+class MildStrongAugmentation(StrongAugmentation):
+    """Alias for the mammography-safe strong policy."""
+
+
+class IntensityJitter:
+    """Grayscale-safe intensity perturbation using brightness and contrast only."""
+
+    def __init__(self, brightness: float = 0.0, contrast: float = 0.0):
+        self.brightness = max(0.0, brightness)
+        self.contrast = max(0.0, contrast)
+
+    def __call__(self, img):
+        if self.brightness > 0:
+            factor = random.uniform(1.0 - self.brightness, 1.0 + self.brightness)
+            img = TF.adjust_brightness(img, factor)
+        if self.contrast > 0:
+            factor = random.uniform(1.0 - self.contrast, 1.0 + self.contrast)
+            img = TF.adjust_contrast(img, factor)
+        return img
 
 
 class EvalTransforms:
@@ -133,6 +170,8 @@ def get_transforms(
         return WeakAugmentation(image_size=image_size, config=config)
     elif aug_type == "strong":
         return StrongAugmentation(image_size=image_size, **kwargs)
+    elif aug_type == "mild_strong":
+        return MildStrongAugmentation(image_size=image_size, **kwargs)
     elif aug_type == "test":
         return EvalTransforms(image_size=image_size)
     else:

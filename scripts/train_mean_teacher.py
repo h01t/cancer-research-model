@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """
-Train FixMatch semi-supervised learning on CBIS-DDSM dataset.
-
-Usage:
-    python scripts/train_fixmatch.py --config configs/default.yaml --labeled 100
-    python scripts/train_fixmatch.py --config configs/default.yaml --labeled 250 --output_dir results/fixmatch_250
+Train Mean Teacher semi-supervised learning on CBIS-DDSM.
 """
 
 import argparse
@@ -17,19 +13,18 @@ import torch
 import yaml
 from torch.utils.data import DataLoader, Subset
 
-# Add project root to path (removed when pyproject.toml is set up in Phase 3)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data.dataset import CBISDDSMDataset, patient_aware_split
 from src.data.sampling import sample_balanced_labeled_indices
 from src.data.ssl_dataset import (
     FixMatchLabeledDataset,
-    FixMatchUnlabeledDataset,
+    TeacherStudentUnlabeledDataset,
     TransformSubset,
 )
 from src.data.transforms import get_transforms
 from src.models.efficientnet import EfficientNetClassifier
-from src.training.fixmatch_trainer import FixMatchTrainer
+from src.training.mean_teacher_trainer import MeanTeacherTrainer
 from src.training.trainer import get_device
 from src.training.utils import set_seed
 
@@ -41,13 +36,11 @@ logger = logging.getLogger(__name__)
 
 
 def load_config(config_path: str) -> dict:
-    """Load configuration from YAML file."""
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
 
 def compute_class_weights(dataset: CBISDDSMDataset) -> torch.Tensor:
-    """Compute inverse-frequency class weights."""
     counts = dataset.get_class_counts()
     total = counts["benign"] + counts["malignant"]
     w_benign = total / (2.0 * max(counts["benign"], 1))
@@ -56,57 +49,48 @@ def compute_class_weights(dataset: CBISDDSMDataset) -> torch.Tensor:
 
 
 def create_datasets(config: dict, num_labeled: int, seed: int = 42):
-    """Create labeled, unlabeled, validation, and test datasets.
-
-    Data flow (standard SSL validation strategy):
-    1. Load full raw dataset (no transforms) — returns PIL images
-    2. Hold out 15% as validation set from the FULL pool (class-balanced, deterministic)
-    3. From the remaining 85%, split num_labeled as labeled, rest as unlabeled
-    4. Wrap with appropriate transforms
-
-    This ensures:
-    - All labeled samples go to training (none wasted on validation)
-    - Validation set is large enough for stable AUC estimates (~185 for mass)
-    - Supervised and FixMatch use the same val set for fair comparison
-    """
     image_size = config["dataset"]["image_size"]
-    ssl_config = config["ssl"]
-    aug_config = config.get("augmentation", {})
-    weak_aug_config = aug_config.get("weak", {})
-    strong_aug_config = aug_config.get("mild_strong", {})
+    aug_cfg = config.get("augmentation", {})
+    student_cfg = aug_cfg.get("mild_strong", {})
+    teacher_aug_name = config["ssl"].get("teacher_augmentation", "weak")
+    student_aug_name = config["ssl"].get("student_augmentation", "mild_strong")
 
-    # Build transforms
-    weak_transform = get_transforms("weak", image_size=image_size, config=weak_aug_config)
-    strong_transform = get_transforms(
-        "mild_strong",
-        image_size=image_size,
-        n=ssl_config.get("randaugment_n", 2),
-        m=ssl_config.get("randaugment_m", 10),
-        **strong_aug_config,
-    )
+    def build_transform(aug_name: str):
+        if aug_name == "weak":
+            return get_transforms(
+                "weak",
+                image_size=image_size,
+                config=aug_cfg.get("weak", {}),
+            )
+        if aug_name == "mild_strong":
+            return get_transforms(
+                "mild_strong",
+                image_size=image_size,
+                **aug_cfg.get("mild_strong", {}),
+            )
+        return get_transforms(aug_name, image_size=image_size)
+
+    weak_transform = build_transform("weak")
+    teacher_transform = build_transform(teacher_aug_name)
+    student_transform = build_transform(student_aug_name)
     test_transform = get_transforms("test", image_size=image_size)
 
-    # Load raw dataset (PIL images, no transform)
     raw_dataset = CBISDDSMDataset(
         split="train",
         abnormality_type=config["dataset"]["abnormality_type"],
-        labeled_subset_size=None,  # Use all training samples
-        transform=None,  # Raw PIL images
+        labeled_subset_size=None,
+        transform=None,
         data_dir=config["dataset"]["data_dir"],
     )
 
-    # Step 1: Patient-aware split — no patient in both train and val sets.
-    # Uses the SAME seed and function as train_supervised.py for fair comparison.
     val_fraction = config.get("training", {}).get("val_split_ratio", 0.15)
     train_pool_indices, val_indices = patient_aware_split(
         raw_dataset, val_fraction=val_fraction, seed=seed
     )
 
-    # Step 2: From the training pool, split into labeled/unlabeled (class-balanced)
     import random as _random
 
     rng = _random.Random(seed)
-
     labeled_indices = sample_balanced_labeled_indices(
         train_pool_indices,
         raw_dataset.labels,
@@ -119,24 +103,14 @@ def create_datasets(config: dict, num_labeled: int, seed: int = 42):
     unlabeled_indices = [i for i in train_pool_indices if i not in labeled_set]
     rng.shuffle(unlabeled_indices)
 
-    # Build dataset wrappers
-    labeled_train = FixMatchLabeledDataset(
-        Subset(raw_dataset, labeled_indices),
-        weak_transform=weak_transform,
-    )
-
-    unlabeled_train = FixMatchUnlabeledDataset(
+    labeled_train = FixMatchLabeledDataset(Subset(raw_dataset, labeled_indices), weak_transform)
+    unlabeled_train = TeacherStudentUnlabeledDataset(
         Subset(raw_dataset, unlabeled_indices),
-        weak_transform=weak_transform,
-        strong_transform=strong_transform,
+        teacher_transform=teacher_transform,
+        student_transform=student_transform,
     )
+    val_dataset = TransformSubset(Subset(raw_dataset, val_indices), test_transform)
 
-    val_dataset = TransformSubset(
-        Subset(raw_dataset, val_indices),
-        transform=test_transform,
-    )
-
-    # Test dataset
     test_dataset = CBISDDSMDataset(
         split="test",
         abnormality_type=config["dataset"]["abnormality_type"],
@@ -154,7 +128,6 @@ def create_datasets(config: dict, num_labeled: int, seed: int = 42):
 
 
 def get_num_workers(config: dict) -> int:
-    """Get num_workers from config, respecting platform."""
     n = config.get("training", {}).get("num_workers", 4)
     if not torch.cuda.is_available():
         n = min(n, 4)
@@ -162,80 +135,42 @@ def get_num_workers(config: dict) -> int:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train FixMatch SSL")
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/default.yaml",
-        help="Path to configuration file",
-    )
-    parser.add_argument(
-        "--labeled",
-        type=int,
-        required=True,
-        help="Number of labeled samples to use",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="results/fixmatch",
-        help="Output directory for results",
-    )
-    parser.add_argument(
-        "--max_epochs",
-        type=int,
-        default=None,
-        help="Override max epochs from config",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=None,
-        help="Device override (cuda/mps/cpu)",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducible data splits and training",
-    )
+    parser = argparse.ArgumentParser(description="Train Mean Teacher SSL")
+    parser.add_argument("--config", type=str, default="configs/mean_teacher.yaml")
+    parser.add_argument("--labeled", type=int, required=True)
+    parser.add_argument("--output_dir", type=str, default="results/mean_teacher")
+    parser.add_argument("--max_epochs", type=int, default=None)
+    parser.add_argument("--device", type=str, default=None)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    # Load configuration
     config = load_config(args.config)
     config["dataset"]["labeled_subset_size"] = args.labeled
     config.setdefault("experiment", {})["seed"] = args.seed
-    set_seed(args.seed)
-
     if args.max_epochs is not None:
         config["training"]["num_epochs"] = args.max_epochs
 
+    set_seed(args.seed)
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save config
     with open(output_dir / "config.yaml", "w") as f:
         yaml.dump(config, f, default_flow_style=False)
 
-    # Device
     device = get_device(args.device)
     logger.info(f"Using device: {device}")
 
-    # Datasets
-    logger.info("Creating datasets...")
     raw_dataset, labeled_dataset, unlabeled_dataset, val_dataset, test_dataset = create_datasets(
         config, args.labeled, seed=args.seed
     )
 
-    # Class weights
     use_class_weights = config["training"].get("class_weighted_loss", True)
     class_weights = compute_class_weights(raw_dataset) if use_class_weights else None
 
-    # Data loaders
     num_workers = get_num_workers(config)
     pin_memory = device.type == "cuda"
     batch_size = config["training"]["batch_size"]
-    unlabeled_batch_ratio = config["ssl"]["unlabeled_batch_ratio"]
+    unlabeled_batch_ratio = config["ssl"].get("unlabeled_batch_ratio", 2)
 
     labeled_loader = DataLoader(
         labeled_dataset,
@@ -268,8 +203,6 @@ def main():
         pin_memory=pin_memory,
     )
 
-    # Model
-    logger.info("Creating model...")
     model = EfficientNetClassifier(
         num_classes=config["model"]["num_classes"],
         pretrained=config["model"]["pretrained"],
@@ -277,8 +210,7 @@ def main():
         freeze_backbone=config["model"].get("freeze_backbone", False),
     )
 
-    # Trainer
-    trainer = FixMatchTrainer(
+    trainer = MeanTeacherTrainer(
         model,
         config,
         device=device,
@@ -286,24 +218,19 @@ def main():
         class_weights=class_weights,
     )
 
-    # Train
-    logger.info("Starting FixMatch training...")
+    logger.info("Starting Mean Teacher training...")
     trainer.train(labeled_loader, unlabeled_loader, val_loader)
 
     best_checkpoint = output_dir / "best_model.pth"
     if best_checkpoint.exists():
         trainer.load_checkpoint(best_checkpoint)
 
-    # Evaluate on validation/test set (with EMA if available)
-    logger.info("Evaluating on test set...")
-    if trainer.ema is not None:
-        trainer.ema.apply(trainer.model)
+    trainer.ema.apply(trainer.model)
     try:
         threshold, val_metrics = trainer.tune_decision_threshold(val_loader)
         test_metrics = trainer.evaluate(test_loader, decision_threshold=threshold)
     finally:
-        if trainer.ema is not None:
-            trainer.ema.restore(trainer.model)
+        trainer.ema.restore(trainer.model)
 
     print(f"\nValidation threshold: {threshold:.4f}")
     print("\nValidation metrics:")
@@ -313,7 +240,6 @@ def main():
     for key, value in test_metrics.items():
         print(f"  {key}: {value:.4f}")
 
-    # Save results
     with open(output_dir / "val_metrics.yaml", "w") as f:
         yaml.dump({k: float(v) for k, v in val_metrics.items()}, f)
     with open(output_dir / "test_metrics.yaml", "w") as f:

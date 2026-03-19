@@ -56,6 +56,24 @@ class FixMatchUnlabeledDataset(Dataset):
         return self.weak_transform(img), self.strong_transform(img)
 
 
+class TeacherStudentUnlabeledDataset(Dataset):
+    """Wraps a dataset to produce teacher and student views of the same image."""
+
+    def __init__(
+        self, dataset: Dataset | Subset, teacher_transform: Any, student_transform: Any
+    ):
+        self.dataset = dataset
+        self.teacher_transform = teacher_transform
+        self.student_transform = student_transform
+
+    def __len__(self) -> int:
+        return len(self.dataset)  # type: ignore[arg-type]
+
+    def __getitem__(self, idx: int):
+        img, _ = self.dataset[idx]
+        return self.teacher_transform(img), self.student_transform(img)
+
+
 class TransformSubset(Dataset):
     """Wraps a dataset (or Subset) with a different transform.
 

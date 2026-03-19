@@ -45,8 +45,14 @@ training:
 # SSL (FixMatch) — paper defaults, no bells and whistles
 ssl:
   method: "fixmatch"
-  confidence_threshold: 0.95   # tau: paper default. Only high-confidence pseudo-labels.
-  lambda_u: 1.0                # paper default. Full weight on unsupervised loss.
+  confidence_threshold: 0.95   # final tau target after ramp.
+  confidence_threshold_start: 0.70
+  confidence_threshold_end: 0.95
+  confidence_threshold_ramp_epochs: 15
+  lambda_u: 1.0                # final unsupervised weight target after ramp.
+  lambda_u_start: 0.0
+  lambda_u_end: 1.0
+  lambda_u_ramp_epochs: 20
   unlabeled_batch_ratio: 2     # mu: fits 8GB VRAM at 512px
   randaugment_n: 2             # RandAugment: number of transforms
   randaugment_m: 10            # RandAugment: magnitude (0-30)
@@ -58,9 +64,15 @@ ssl:
 augmentation:
   weak:
     random_horizontal_flip: true
-    random_vertical_flip: true
+    random_vertical_flip: false
     random_rotation: 5         # degrees
-    color_jitter: 0.1          # brightness/contrast/saturation variation
+    color_jitter: 0.0
+  mild_strong:
+    random_horizontal_flip: true
+    random_rotation: 8.0
+    translate: [0.05, 0.05]
+    brightness: 0.08
+    contrast: 0.12
 
 # Logging and checkpoints (per-experiment, inside output_dir)
 logging:

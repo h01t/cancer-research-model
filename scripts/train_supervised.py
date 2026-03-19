@@ -21,10 +21,12 @@ from torch.utils.data import DataLoader, Subset
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data.dataset import CBISDDSMDataset, patient_aware_split
+from src.data.sampling import sample_balanced_labeled_indices
 from src.data.ssl_dataset import TransformSubset
 from src.data.transforms import get_transforms
 from src.models.efficientnet import EfficientNetClassifier
 from src.training.trainer import BaseTrainer, get_device
+from src.training.utils import set_seed
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +53,7 @@ def compute_class_weights(dataset: CBISDDSMDataset) -> torch.Tensor:
     return weights
 
 
-def create_datasets(config: dict, labeled_subset_size: int | None = None):
+def create_datasets(config: dict, labeled_subset_size: int | None = None, seed: int = 42):
     """Create train, validation, and test datasets.
 
     When labeled_subset_size is None (full data):
@@ -83,33 +85,17 @@ def create_datasets(config: dict, labeled_subset_size: int | None = None):
     # Uses the SAME seed and function as train_fixmatch.py for fair comparison.
     val_fraction = config.get("training", {}).get("val_split_ratio", 0.15)
     train_pool_indices, val_indices = patient_aware_split(
-        raw_dataset, val_fraction=val_fraction, seed=42
+        raw_dataset, val_fraction=val_fraction, seed=seed
     )
 
     if labeled_subset_size is not None:
         # Ablation mode: sample labeled_subset_size from the training pool (class-balanced)
-        import random as _random
-
-        rng = _random.Random(42)
-        train_pool_labels = [raw_dataset.labels[i] for i in train_pool_indices]
-        benign_pool = [
-            idx for idx, label in zip(train_pool_indices, train_pool_labels) if label == 0
-        ]
-        malignant_pool = [
-            idx for idx, label in zip(train_pool_indices, train_pool_labels) if label == 1
-        ]
-
-        num_per_class = labeled_subset_size // 2
-        if len(benign_pool) < num_per_class or len(malignant_pool) < num_per_class:
-            raise ValueError(
-                f"Not enough samples per class for {labeled_subset_size} labeled. "
-                f"Benign: {len(benign_pool)}, Malignant: {len(malignant_pool)}"
-            )
-
-        train_indices = rng.sample(benign_pool, num_per_class) + rng.sample(
-            malignant_pool, num_per_class
+        train_indices = sample_balanced_labeled_indices(
+            train_pool_indices,
+            raw_dataset.labels,
+            labeled_subset_size,
+            seed,
         )
-        rng.shuffle(train_indices)
     else:
         # Full data mode: use entire training pool
         train_indices = train_pool_indices
@@ -172,10 +158,18 @@ def main():
         default=None,
         help="Device override (cuda/mps/cpu)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible data splits and training",
+    )
     args = parser.parse_args()
 
     # Load configuration
     config = load_config(args.config)
+    config.setdefault("experiment", {})["seed"] = args.seed
+    set_seed(args.seed)
 
     if args.labeled_subset is not None:
         config["dataset"]["labeled_subset_size"] = args.labeled_subset
@@ -196,7 +190,9 @@ def main():
     # Datasets
     logger.info("Creating datasets...")
     raw_dataset, train_dataset, val_dataset, test_dataset = create_datasets(
-        config, labeled_subset_size=config["dataset"].get("labeled_subset_size")
+        config,
+        labeled_subset_size=config["dataset"].get("labeled_subset_size"),
+        seed=args.seed,
     )
 
     # Class weights
@@ -236,6 +232,7 @@ def main():
         num_classes=config["model"]["num_classes"],
         pretrained=config["model"]["pretrained"],
         dropout_rate=config["model"]["dropout_rate"],
+        freeze_backbone=config["model"].get("freeze_backbone", False),
     )
 
     # Trainer
@@ -251,14 +248,26 @@ def main():
     logger.info("Starting training...")
     trainer.train(train_loader, val_loader)
 
+    best_checkpoint = output_dir / "best_model.pth"
+    if best_checkpoint.exists():
+        trainer.load_checkpoint(best_checkpoint)
+
+    threshold, val_metrics = trainer.tune_decision_threshold(val_loader)
+
     # Evaluate on test set
     logger.info("Evaluating on test set...")
-    test_metrics = trainer.evaluate(test_loader)
+    test_metrics = trainer.evaluate(test_loader, decision_threshold=threshold)
+    print(f"\nValidation threshold: {threshold:.4f}")
+    print("\nValidation metrics:")
+    for key, value in val_metrics.items():
+        print(f"  {key}: {value:.4f}")
     print("\nTest metrics:")
     for key, value in test_metrics.items():
         print(f"  {key}: {value:.4f}")
 
     # Save results
+    with open(output_dir / "val_metrics.yaml", "w") as f:
+        yaml.dump({k: float(v) for k, v in val_metrics.items()}, f)
     with open(output_dir / "test_metrics.yaml", "w") as f:
         yaml.dump({k: float(v) for k, v in test_metrics.items()}, f)
 

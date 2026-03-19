@@ -5,7 +5,7 @@ Tests for classification metrics, including edge cases.
 import numpy as np
 import pytest
 
-from src.training.metrics import aggregate_metrics, compute_metrics
+from src.training.metrics import aggregate_metrics, compute_metrics, find_best_threshold
 
 
 class TestComputeMetrics:
@@ -86,3 +86,16 @@ class TestAggregateMetrics:
     def test_aggregate_empty(self):
         result = aggregate_metrics([])
         assert result == {}
+
+
+class TestThresholdSelection:
+    def test_find_best_threshold_returns_balanced_cutoff(self):
+        y_true = np.array([0, 0, 1, 1])
+        y_prob = np.array([0.1, 0.4, 0.6, 0.9])
+
+        threshold, metrics = find_best_threshold(y_true, y_prob)
+
+        assert 0.4 <= threshold <= 0.6
+        assert metrics["youden_j"] >= 0.0
+        assert metrics["sensitivity"] == 1.0
+        assert metrics["specificity"] == 1.0

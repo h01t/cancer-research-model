@@ -93,6 +93,18 @@ class TestTrainerInit:
         trainer = BaseTrainer(model, base_config)
         assert isinstance(trainer.optimizer, torch.optim.AdamW)
 
+    def test_threshold_tuning(self, base_config):
+        model = EfficientNetClassifier(num_classes=2, pretrained=False)
+        trainer = BaseTrainer(model, base_config)
+        dataset = SyntheticDataset(size=8, image_size=32)
+        loader = DataLoader(dataset, batch_size=2)
+
+        threshold, metrics = trainer.tune_decision_threshold(loader)
+
+        assert 0.0 <= threshold <= 1.0
+        assert metrics["decision_threshold"] == threshold
+        assert "youden_j" in metrics
+
 
 class TestTrainingLoop:
     """Test the actual training loop with synthetic data."""

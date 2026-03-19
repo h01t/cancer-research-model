@@ -9,6 +9,7 @@ from PIL import Image
 from src.data.transforms import (
     StrongAugmentation,
     EvalTransforms,
+    MildStrongAugmentation,
     WeakAugmentation,
     get_transforms,
 )
@@ -45,6 +46,16 @@ class TestWeakAugmentation:
         result = transform(pil_image)
         assert result.shape == (3, 64, 64)
 
+    def test_medical_safe_defaults_disable_vertical_flip(self):
+        config = {
+            "random_horizontal_flip": True,
+            "random_vertical_flip": False,
+            "random_rotation": 5,
+            "color_jitter": 0.0,
+        }
+        transform = WeakAugmentation(image_size=64, config=config)
+        assert not any(t.__class__.__name__ == "RandomVerticalFlip" for t in transform.transform.transforms)
+
 
 class TestStrongAugmentation:
     def test_output_shape(self, pil_image):
@@ -52,6 +63,10 @@ class TestStrongAugmentation:
         result = transform(pil_image)
         assert isinstance(result, torch.Tensor)
         assert result.shape == (3, 64, 64)
+
+    def test_no_random_erasing(self):
+        transform = StrongAugmentation(image_size=64)
+        assert not any(t.__class__.__name__ == "RandomErasing" for t in transform.transform.transforms)
 
 
 class TestEvalTransforms:
@@ -75,6 +90,10 @@ class TestGetTransforms:
     def test_factory_strong(self):
         t = get_transforms("strong", image_size=32)
         assert isinstance(t, StrongAugmentation)
+
+    def test_factory_mild_strong(self):
+        t = get_transforms("mild_strong", image_size=32)
+        assert isinstance(t, MildStrongAugmentation)
 
     def test_factory_test(self):
         t = get_transforms("test", image_size=32)

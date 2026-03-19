@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .metrics import compute_metrics
+from .metrics import find_best_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,35 @@ class BaseTrainer:
         if self.use_wandb:
             self._init_wandb(config)
 
+    def predict(self, data_loader: DataLoader) -> tuple[float, np.ndarray, np.ndarray]:
+        """Collect labels and positive-class probabilities for a data loader."""
+        self.model.eval()
+        total_loss = 0.0
+        all_labels = []
+        all_probs = []
+
+        with torch.no_grad():
+            for data, targets in tqdm(data_loader, desc="Validation", leave=False):
+                data = data.to(self.device)
+                targets = targets.to(self.device)
+
+                if self.use_amp:
+                    with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
+                        outputs = self.model(data)
+                        loss = self.criterion(outputs, targets)
+                else:
+                    outputs = self.model(data)
+                    loss = self.criterion(outputs, targets)
+
+                total_loss += loss.item()
+                probs = torch.softmax(outputs.float(), dim=1)
+
+                all_labels.extend(targets.cpu().numpy())
+                all_probs.extend(probs[:, 1].cpu().numpy())
+
+        epoch_loss = total_loss / max(len(data_loader), 1)
+        return epoch_loss, np.array(all_labels), np.array(all_probs)
+
     def _init_wandb(self, config: dict) -> None:
         """Initialize Weights & Biases logging."""
         try:
@@ -277,38 +307,19 @@ class BaseTrainer:
 
     def validate(self, val_loader: DataLoader) -> tuple[float, dict[str, float]]:
         """Validate model on a data loader."""
-        self.model.eval()
-        total_loss = 0.0
-        all_preds = []
-        all_labels = []
-        all_probs = []
-
-        with torch.no_grad():
-            for data, targets in tqdm(val_loader, desc="Validation", leave=False):
-                data = data.to(self.device)
-                targets = targets.to(self.device)
-
-                if self.use_amp:
-                    with torch.amp.autocast(device_type=self.device.type, dtype=self.amp_dtype):
-                        outputs = self.model(data)
-                        loss = self.criterion(outputs, targets)
-                else:
-                    outputs = self.model(data)
-                    loss = self.criterion(outputs, targets)
-
-                total_loss += loss.item()
-
-                probs = torch.softmax(outputs.float(), dim=1)
-                preds = torch.argmax(probs, dim=1)
-
-                all_preds.extend(preds.cpu().numpy())
-                all_labels.extend(targets.cpu().numpy())
-                all_probs.extend(probs[:, 1].cpu().numpy())
-
-        epoch_loss = total_loss / max(len(val_loader), 1)
-        metrics = compute_metrics(np.array(all_labels), np.array(all_preds), np.array(all_probs))
+        epoch_loss, y_true, y_prob = self.predict(val_loader)
+        y_pred = (y_prob >= 0.5).astype(int)
+        metrics = compute_metrics(y_true, y_pred, y_prob)
 
         return epoch_loss, metrics
+
+    def tune_decision_threshold(self, data_loader: DataLoader) -> tuple[float, dict[str, float]]:
+        """Tune the binary decision threshold on a validation loader."""
+        epoch_loss, y_true, y_prob = self.predict(data_loader)
+        threshold, metrics = find_best_threshold(y_true, y_prob)
+        metrics["loss"] = epoch_loss
+        metrics["decision_threshold"] = threshold
+        return threshold, metrics
 
     def train(self, train_loader: DataLoader, val_loader: DataLoader) -> None:
         """Main training loop with warmup, scheduling, early stopping."""
@@ -439,7 +450,13 @@ class BaseTrainer:
         self.history = checkpoint.get("history", self.history)
         return checkpoint["epoch"]
 
-    def evaluate(self, test_loader: DataLoader) -> dict[str, float]:
+    def evaluate(
+        self, test_loader: DataLoader, decision_threshold: float = 0.5
+    ) -> dict[str, float]:
         """Evaluate model on test set."""
-        _, metrics = self.validate(test_loader)
+        epoch_loss, y_true, y_prob = self.predict(test_loader)
+        y_pred = (y_prob >= decision_threshold).astype(int)
+        metrics = compute_metrics(y_true, y_pred, y_prob)
+        metrics["loss"] = epoch_loss
+        metrics["decision_threshold"] = decision_threshold
         return metrics

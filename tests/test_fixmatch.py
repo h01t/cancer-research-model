@@ -134,6 +134,22 @@ class TestFixMatchTrainer:
         assert trainer.confidence_threshold == 0.95
         assert trainer.lambda_u == 1.0
 
+    def test_schedule_ramps(self, base_config):
+        base_config["ssl"]["confidence_threshold_start"] = 0.7
+        base_config["ssl"]["confidence_threshold_end"] = 0.95
+        base_config["ssl"]["confidence_threshold_ramp_epochs"] = 10
+        base_config["ssl"]["lambda_u_start"] = 0.0
+        base_config["ssl"]["lambda_u_end"] = 1.0
+        base_config["ssl"]["lambda_u_ramp_epochs"] = 20
+
+        model = EfficientNetClassifier(num_classes=2, pretrained=False)
+        trainer = FixMatchTrainer(model, base_config)
+
+        assert trainer._get_current_confidence_threshold(0) == pytest.approx(0.7)
+        assert trainer._get_current_confidence_threshold(10) == pytest.approx(0.95)
+        assert trainer._get_current_lambda_u(0) == pytest.approx(0.0)
+        assert trainer._get_current_lambda_u(20) == pytest.approx(1.0)
+
     def test_trainer_init_with_ema(self, base_config):
         base_config["ssl"]["use_ema"] = True
         model = EfficientNetClassifier(num_classes=2, pretrained=False)
