@@ -13,10 +13,11 @@ import yaml
 
 
 METHOD_PATTERN = re.compile(
-    r"^(?P<method>supervised|fixmatch_static|fixmatch_legacy_aug|fixmatch|mean_teacher)"
+    r"^(?P<method>supervised_nofreeze|supervised|fixmatch_static|fixmatch_legacy_aug|fixmatch|mean_teacher)"
     r"_(?P<subset>full|\d+)_seed(?P<seed>\d+)$"
 )
 MATERIAL_DROP = 0.02
+NOFREEZE_ALERT_DELTA = 0.03
 
 
 def load_yaml(path: Path) -> dict:
@@ -137,44 +138,101 @@ def lookup_group_metric(grouped: list[dict], method: str, subset: str | int, met
 
 
 def build_recommendation(grouped: list[dict]) -> str:
-    fixmatch_500 = lookup_group_metric(grouped, "fixmatch", 500, "mean_val_auc")
-    supervised_500 = lookup_group_metric(grouped, "supervised", 500, "mean_val_auc")
-    if fixmatch_500 is not None and supervised_500 is not None:
-        delta = fixmatch_500 - supervised_500
-        if delta >= 0.01:
-            verdict = "Promote FixMatch as the primary SSL path."
-        elif delta >= -0.01:
-            verdict = "Keep FixMatch active, but schedule a small Mean Teacher scout next."
+    mt_100 = lookup_group_metric(grouped, "mean_teacher", 100, "mean_val_auc")
+    mt_250 = lookup_group_metric(grouped, "mean_teacher", 250, "mean_val_auc")
+    sup_100 = lookup_group_metric(grouped, "supervised", 100, "mean_val_auc")
+    sup_250 = lookup_group_metric(grouped, "supervised", 250, "mean_val_auc")
+    nofreeze_100 = lookup_group_metric(grouped, "supervised_nofreeze", 100, "mean_val_auc")
+    nofreeze_250 = lookup_group_metric(grouped, "supervised_nofreeze", 250, "mean_val_auc")
+
+    nofreeze_flags = []
+    if nofreeze_100 is not None and sup_100 is not None:
+        delta = nofreeze_100 - sup_100
+        if delta >= NOFREEZE_ALERT_DELTA:
+            nofreeze_flags.append(
+                f"The no-freeze supervised 100 baseline improves over rescue supervised by {delta:+.4f}."
+            )
+    if nofreeze_250 is not None and sup_250 is not None:
+        delta = nofreeze_250 - sup_250
+        if delta >= NOFREEZE_ALERT_DELTA:
+            nofreeze_flags.append(
+                f"The no-freeze supervised 250 baseline improves over rescue supervised by {delta:+.4f}."
+            )
+
+    if None not in (mt_100, mt_250, sup_100, sup_250):
+        delta_100 = mt_100 - sup_100
+        delta_250 = mt_250 - sup_250
+        if delta_100 >= 0.02 and delta_250 >= 0.02:
+            verdict = "Promote Mean Teacher as the main next SSL path."
+        elif delta_100 >= 0.02:
+            verdict = (
+                "Mean Teacher looks like another low-label-only signal; prioritize baseline sanity checks "
+                "and representation-learning alternatives next."
+            )
         else:
-            verdict = "Treat FixMatch as a low-label niche result and move Mean Teacher back to priority."
+            verdict = (
+                "Deprioritize new consistency-based SSL methods for now and focus on stronger supervised "
+                "baselines or pretraining."
+            )
 
-        extras = []
-        rescue_fixmatch_100 = lookup_group_metric(grouped, "fixmatch", 100, "mean_val_auc")
-        static_fixmatch_100 = lookup_group_metric(grouped, "fixmatch_static", 100, "mean_val_auc")
-        legacy_fixmatch_100 = lookup_group_metric(grouped, "fixmatch_legacy_aug", 100, "mean_val_auc")
-        if rescue_fixmatch_100 is not None and static_fixmatch_100 is not None:
-            drop = rescue_fixmatch_100 - static_fixmatch_100
-            if drop >= MATERIAL_DROP:
-                extras.append("The schedule ramps look like a major contributor.")
-        if rescue_fixmatch_100 is not None and legacy_fixmatch_100 is not None:
-            drop = rescue_fixmatch_100 - legacy_fixmatch_100
-            if drop >= MATERIAL_DROP:
-                extras.append("The mammography-safe augmentation policy looks like a major contributor.")
-
-        details = f"FixMatch 500 vs supervised 500 mean val AUC delta: {delta:+.4f}."
-        if extras:
-            details = f"{details} {' '.join(extras)}"
+        details = (
+            f"Mean Teacher vs rescue supervised mean val AUC deltas: "
+            f"100={delta_100:+.4f}, 250={delta_250:+.4f}."
+        )
+        if nofreeze_flags:
+            details = f"{details} {' '.join(nofreeze_flags)}"
         return f"{verdict} {details}"
 
-    mean_teacher_500 = lookup_group_metric(grouped, "mean_teacher", 500, "mean_val_auc")
-    if mean_teacher_500 is not None and supervised_500 is not None:
-        delta = mean_teacher_500 - supervised_500
+    if nofreeze_flags:
         return (
-            "Mean Teacher fallback branch is active. "
-            f"Mean Teacher 500 vs supervised 500 mean val AUC delta: {delta:+.4f}."
+            "Mean Teacher results are still incomplete. "
+            + " ".join(nofreeze_flags)
+            + " Future SSL comparisons should include a matched no-freeze baseline."
         )
 
-    return "Follow-up results are incomplete; wait for more completed runs before making a method decision."
+    return "Follow-up results are incomplete; wait for more Mean Teacher and no-freeze runs before making a method decision."
+
+
+def build_comparison_sections(grouped: list[dict]) -> list[str]:
+    lines = []
+
+    mt_100 = lookup_group_metric(grouped, "mean_teacher", 100, "mean_val_auc")
+    mt_250 = lookup_group_metric(grouped, "mean_teacher", 250, "mean_val_auc")
+    sup_100 = lookup_group_metric(grouped, "supervised", 100, "mean_val_auc")
+    sup_250 = lookup_group_metric(grouped, "supervised", 250, "mean_val_auc")
+    if any(value is not None for value in (mt_100, mt_250)):
+        lines.extend(["", "Mean Teacher Comparison", "-----------------------"])
+        if mt_100 is not None and sup_100 is not None:
+            lines.append(
+                f"Subset 100: mean_teacher={mt_100:.4f}, rescue_supervised={sup_100:.4f}, delta={mt_100 - sup_100:+.4f}"
+            )
+        else:
+            lines.append("Subset 100: incomplete")
+        if mt_250 is not None and sup_250 is not None:
+            lines.append(
+                f"Subset 250: mean_teacher={mt_250:.4f}, rescue_supervised={sup_250:.4f}, delta={mt_250 - sup_250:+.4f}"
+            )
+        else:
+            lines.append("Subset 250: incomplete")
+
+    nofreeze_100 = lookup_group_metric(grouped, "supervised_nofreeze", 100, "mean_val_auc")
+    nofreeze_250 = lookup_group_metric(grouped, "supervised_nofreeze", 250, "mean_val_auc")
+    if any(value is not None for value in (nofreeze_100, nofreeze_250)):
+        lines.extend(["", "Freeze Sanity Comparison", "------------------------"])
+        if nofreeze_100 is not None and sup_100 is not None:
+            lines.append(
+                f"Subset 100: nofreeze={nofreeze_100:.4f}, rescue_supervised={sup_100:.4f}, delta={nofreeze_100 - sup_100:+.4f}"
+            )
+        else:
+            lines.append("Subset 100: incomplete")
+        if nofreeze_250 is not None and sup_250 is not None:
+            lines.append(
+                f"Subset 250: nofreeze={nofreeze_250:.4f}, rescue_supervised={sup_250:.4f}, delta={nofreeze_250 - sup_250:+.4f}"
+            )
+        else:
+            lines.append("Subset 250: incomplete")
+
+    return lines
 
 
 def format_summary(rows: list[dict], grouped: list[dict], recommendation: str) -> str:
@@ -201,6 +259,8 @@ def format_summary(rows: list[dict], grouped: list[dict], recommendation: str) -
             f"{row['mean_val_auc']:>12.4f} {row['mean_test_auc']:>13.4f} "
             f"{row['mean_sensitivity']:>10.4f} {row['mean_specificity']:>10.4f}"
         )
+
+    lines.extend(build_comparison_sections(grouped))
 
     fixmatch_rows = [row for row in rows if row["method"].startswith("fixmatch")]
     if fixmatch_rows:

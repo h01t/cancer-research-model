@@ -64,10 +64,17 @@ class BaseTrainer:
 
         # Training parameters
         train_cfg = config["training"]
+        model_cfg = config.get("model", {})
         self.batch_size = train_cfg["batch_size"]
         self.num_epochs = train_cfg["num_epochs"]
         self.learning_rate = train_cfg["learning_rate"]
         self.weight_decay = train_cfg["weight_decay"]
+        self.freeze_backbone_epochs = model_cfg.get("freeze_backbone_epochs", 0)
+        self.backbone_unfrozen = not model_cfg.get("freeze_backbone", False)
+        if not self.backbone_unfrozen and self.freeze_backbone_epochs > 0:
+            logger.info(
+                "Backbone frozen — will unfreeze after epoch %s", self.freeze_backbone_epochs
+            )
 
         # Gradient clipping
         self.max_grad_norm = train_cfg.get("max_grad_norm", 1.0)
@@ -332,6 +339,19 @@ class BaseTrainer:
             # Apply warmup
             self._apply_warmup(epoch)
 
+            # Unfreeze backbone once the scheduled epoch is reached
+            if (
+                not self.backbone_unfrozen
+                and self.freeze_backbone_epochs > 0
+                and epoch >= self.freeze_backbone_epochs
+            ):
+                if hasattr(self.model, "unfreeze_backbone"):
+                    self.model.unfreeze_backbone()
+                    self.backbone_unfrozen = True
+                    logger.info(f"Unfrozen backbone at epoch {epoch + 1}")
+                else:
+                    logger.warning("Model does not have unfreeze_backbone method")
+
             current_lr = self._get_current_lr()
             print(f"\nEpoch {epoch + 1}/{self.num_epochs} (lr={current_lr:.6f})")
 
@@ -421,6 +441,9 @@ class BaseTrainer:
             "epochs_without_improvement": self.epochs_without_improvement,
             "history": self.history,
             "config": self.config,
+            "trainer_state": {
+                "backbone_unfrozen": self.backbone_unfrozen,
+            },
         }
 
         torch.save(checkpoint, path)
@@ -448,6 +471,8 @@ class BaseTrainer:
         self.best_val_auc = checkpoint.get("best_val_auc", 0.0)
         self.epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
         self.history = checkpoint.get("history", self.history)
+        trainer_state = checkpoint.get("trainer_state", {})
+        self.backbone_unfrozen = trainer_state.get("backbone_unfrozen", self.backbone_unfrozen)
         return checkpoint["epoch"]
 
     def evaluate(

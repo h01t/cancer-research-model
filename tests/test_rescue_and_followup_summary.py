@@ -54,50 +54,52 @@ class TestRescueSummary:
 
 
 class TestFollowupSummary:
-    def test_followup_summary_handles_partial_runs_and_recommends_fixmatch(self, tmp_path):
+    def test_followup_summary_handles_partial_runs_and_recommends_mean_teacher(self, tmp_path):
         rescue_dir = tmp_path / "results_rescue"
         followup_dir = tmp_path / "results_followup"
 
-        for seed, sup_auc, fix_auc in [(42, 0.61, 0.74), (43, 0.62, 0.76), (44, 0.60, 0.75)]:
+        for seed, sup_auc in [(42, 0.61), (43, 0.62), (44, 0.60)]:
             write_metrics(rescue_dir / f"supervised_100_seed{seed}", sup_auc, 0.6)
-            write_metrics(rescue_dir / f"fixmatch_100_seed{seed}", fix_auc, 0.7)
+            write_metrics(rescue_dir / f"supervised_250_seed{seed}", 0.70, 0.69)
+            write_metrics(rescue_dir / f"fixmatch_100_seed{seed}", 0.74, 0.70)
+            write_metrics(rescue_dir / f"fixmatch_250_seed{seed}", 0.67, 0.64)
 
-        write_metrics(followup_dir / "supervised_500_seed42", 0.79, 0.78)
-        write_metrics(followup_dir / "supervised_500_seed43", 0.80, 0.79)
+        write_metrics(followup_dir / "mean_teacher_100_seed42", 0.66, 0.64)
         write_history(
-            followup_dir / "supervised_500_seed42",
-            ["train_loss"],
-            [[1.0], [0.8]],
+            followup_dir / "mean_teacher_100_seed42",
+            ["consistency_loss", "consistency_weight"],
+            [[0.5, 0.4], [0.3, 1.0]],
         )
+        write_metrics(followup_dir / "mean_teacher_100_seed43", 0.65, 0.63)
         write_history(
-            followup_dir / "supervised_500_seed43",
-            ["train_loss"],
-            [[1.0], [0.8]],
+            followup_dir / "mean_teacher_100_seed43",
+            ["consistency_loss", "consistency_weight"],
+            [[0.6, 0.4], [0.3, 1.0]],
+        )
+        write_metrics(followup_dir / "mean_teacher_250_seed42", 0.73, 0.71)
+        write_history(
+            followup_dir / "mean_teacher_250_seed42",
+            ["consistency_loss", "consistency_weight"],
+            [[0.4, 0.4], [0.2, 1.0]],
+        )
+        write_metrics(followup_dir / "mean_teacher_250_seed43", 0.74, 0.72)
+        write_history(
+            followup_dir / "mean_teacher_250_seed43",
+            ["consistency_loss", "consistency_weight"],
+            [[0.5, 0.4], [0.2, 1.0]],
         )
 
-        write_metrics(followup_dir / "fixmatch_500_seed42", 0.82, 0.81)
+        write_metrics(followup_dir / "supervised_nofreeze_100_seed42", 0.66, 0.65)
         write_history(
-            followup_dir / "fixmatch_500_seed42",
-            ["mask_ratio", "unsup_loss", "lambda_u"],
-            [[0.1, 0.6, 0.2], [0.5, 0.3, 1.0]],
+            followup_dir / "supervised_nofreeze_100_seed42",
+            ["train_loss"],
+            [[1.0], [0.7]],
         )
-        write_metrics(followup_dir / "fixmatch_500_seed43", 0.81, 0.80)
+        write_metrics(followup_dir / "supervised_nofreeze_250_seed42", 0.75, 0.73)
         write_history(
-            followup_dir / "fixmatch_500_seed43",
-            ["mask_ratio", "unsup_loss", "lambda_u"],
-            [[0.2, 0.5, 0.2], [0.6, 0.2, 1.0]],
-        )
-        write_metrics(followup_dir / "fixmatch_static_100_seed42", 0.70, 0.69)
-        write_history(
-            followup_dir / "fixmatch_static_100_seed42",
-            ["mask_ratio", "unsup_loss", "lambda_u"],
-            [[0.1, 0.7, 1.0], [0.3, 0.4, 1.0]],
-        )
-        write_metrics(followup_dir / "fixmatch_legacy_aug_100_seed42", 0.69, 0.68)
-        write_history(
-            followup_dir / "fixmatch_legacy_aug_100_seed42",
-            ["mask_ratio", "unsup_loss", "lambda_u"],
-            [[0.1, 0.9, 0.1], [0.2, 0.5, 1.0]],
+            followup_dir / "supervised_nofreeze_250_seed42",
+            ["train_loss"],
+            [[1.0], [0.7]],
         )
 
         result = subprocess.run(
@@ -120,13 +122,29 @@ class TestFollowupSummary:
         assert summary_path.exists()
         assert csv_path.exists()
         summary_text = summary_path.read_text()
-        assert "Promote FixMatch as the primary SSL path." in summary_text
-        assert "schedule ramps look like a major contributor" in summary_text
-        assert "mammography-safe augmentation policy looks like a major contributor" in summary_text
+        assert "Promote Mean Teacher as the main next SSL path." in summary_text
+        assert "Mean Teacher Comparison" in summary_text
+        assert "Freeze Sanity Comparison" in summary_text
+        assert "Future SSL comparisons should include a matched no-freeze baseline" not in summary_text
         assert "followup_summary.csv" not in result.stdout
 
 
 class TestConfigIsolation:
+    def test_default_nofreeze_diff_is_freeze_only(self):
+        base = yaml.safe_load(Path("configs/default.yaml").read_text())
+        probe = yaml.safe_load(Path("configs/default_nofreeze.yaml").read_text())
+
+        assert probe["dataset"] == base["dataset"]
+        assert probe["training"] == base["training"]
+        assert probe["augmentation"] == base["augmentation"]
+        assert probe["logging"] == base["logging"]
+        assert probe["wandb"] == base["wandb"]
+        assert probe["model"]["freeze_backbone"] is False
+        assert probe["model"]["freeze_backbone_epochs"] == 0
+        comparable_model = {k: v for k, v in probe["model"].items() if k not in {"freeze_backbone", "freeze_backbone_epochs"}}
+        base_model = {k: v for k, v in base["model"].items() if k not in {"freeze_backbone", "freeze_backbone_epochs"}}
+        assert comparable_model == base_model
+
     def test_fixmatch_static_diff_is_schedule_only(self):
         base = yaml.safe_load(Path("configs/fixmatch.yaml").read_text())
         probe = yaml.safe_load(Path("configs/fixmatch_static.yaml").read_text())
@@ -156,7 +174,7 @@ class TestConfigIsolation:
 
 
 class TestFollowupRunner:
-    def test_followup_runner_dry_run_selects_branch_and_skips_completed(self, tmp_path):
+    def test_followup_runner_dry_run_uses_mean_teacher_first_profile(self, tmp_path):
         rescue_dir = tmp_path / "results_rescue"
         output_dir = tmp_path / "results_followup"
 
@@ -176,6 +194,8 @@ class TestFollowupRunner:
                 str(rescue_dir),
                 "--output",
                 str(output_dir),
+                "--profile",
+                "mean_teacher_first",
                 "--dry_run",
             ],
             cwd=Path(__file__).resolve().parent.parent,
@@ -187,7 +207,8 @@ class TestFollowupRunner:
         log_text = (output_dir / "followup.log").read_text()
         rescue_json = json.loads((output_dir / "rescue_summary.json").read_text())
         assert rescue_json["promotion_gate"]["decision"] == "keep_fixmatch"
-        assert "Branch selected: FixMatch confirmation" in log_text
+        assert "Profile selected: Mean Teacher first" in log_text
+        assert "DRY RUN: not executing mean_teacher_100_seed42" in log_text
+        assert "DRY RUN: not executing supervised_nofreeze_100_seed42" in log_text
         assert "SKIP: supervised_500_seed42 already completed" in log_text
-        assert "DRY RUN: not executing fixmatch_500_seed42" in log_text
         assert "Follow-Up Overnight Summary" in result.stdout

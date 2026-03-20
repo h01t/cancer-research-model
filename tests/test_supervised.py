@@ -151,6 +151,29 @@ class TestTrainingLoop:
             assert len(trainer.history["val_loss"]) == 2
             assert len(trainer.history["learning_rate"]) == 2
 
+    def test_backbone_unfreezes_after_scheduled_epoch(self, base_config):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_config["training"]["num_epochs"] = 2
+            base_config["model"]["freeze_backbone"] = True
+            base_config["model"]["freeze_backbone_epochs"] = 1
+            model = EfficientNetClassifier(
+                num_classes=2,
+                pretrained=False,
+                freeze_backbone=True,
+            )
+            trainer = BaseTrainer(model, base_config, output_dir=tmpdir)
+
+            train_dataset = SyntheticDataset(size=8, image_size=32)
+            val_dataset = SyntheticDataset(size=4, image_size=32)
+            train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True)
+            val_loader = DataLoader(val_dataset, batch_size=2)
+
+            assert all(not param.requires_grad for param in model.backbone.features.parameters())
+            trainer.train(train_loader, val_loader)
+
+            assert trainer.backbone_unfrozen is True
+            assert all(param.requires_grad for param in model.backbone.features.parameters())
+
     def test_checkpoint_save_load(self, base_config):
         with tempfile.TemporaryDirectory() as tmpdir:
             model = EfficientNetClassifier(num_classes=2, pretrained=False)
@@ -167,3 +190,26 @@ class TestTrainingLoop:
             epoch = trainer2.load_checkpoint(checkpoint_path)
             assert epoch == 1
             assert trainer2.best_val_auc == 0.85
+
+    def test_checkpoint_restores_backbone_unfreeze_state(self, base_config):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_config["model"]["freeze_backbone"] = True
+            base_config["model"]["freeze_backbone_epochs"] = 5
+            model = EfficientNetClassifier(
+                num_classes=2,
+                pretrained=False,
+                freeze_backbone=True,
+            )
+            trainer = BaseTrainer(model, base_config, output_dir=tmpdir)
+            trainer.backbone_unfrozen = True
+            trainer.save_checkpoint(1, 0.75, best=True)
+
+            model2 = EfficientNetClassifier(
+                num_classes=2,
+                pretrained=False,
+                freeze_backbone=True,
+            )
+            trainer2 = BaseTrainer(model2, base_config, output_dir=tmpdir)
+            trainer2.load_checkpoint(Path(tmpdir) / "best_model.pth")
+
+            assert trainer2.backbone_unfrozen is True

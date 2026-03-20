@@ -1,11 +1,12 @@
 #!/bin/bash
-# Gate-aware follow-up overnight runner for FixMatch confirmation or Mean Teacher pivot.
+# Follow-up overnight runner for FixMatch confirmation, Mean Teacher scouting,
+# and supervised freeze sanity checks.
 
 set -u
 
 RESCUE_DIR="results_rescue"
 OUTPUT_DIR="results_followup"
-PROFILE="confirm_fixmatch"
+PROFILE="mean_teacher_first"
 DEVICE=""
 MAX_EPOCHS=""
 RETRY_FAILED=0
@@ -13,6 +14,7 @@ SKIP_COMPLETED=1
 DRY_RUN=0
 
 SUPERVISED_CONFIG="configs/default.yaml"
+SUPERVISED_NOFREEZE_CONFIG="configs/default_nofreeze.yaml"
 FIXMATCH_CONFIG="configs/fixmatch.yaml"
 FIXMATCH_STATIC_CONFIG="configs/fixmatch_static.yaml"
 FIXMATCH_LEGACY_AUG_CONFIG="configs/fixmatch_legacy_aug.yaml"
@@ -26,7 +28,7 @@ Options:
   --rescue_dir DIR        Completed rescue results directory (default: results_rescue)
   -o, --output DIR        Output directory for follow-up runs (default: results_followup)
   --device DEVICE         Optional device override passed to training scripts
-  --profile PROFILE       Follow-up profile (default: confirm_fixmatch)
+  --profile PROFILE       Follow-up profile (default: mean_teacher_first)
   --max_epochs N          Optional max-epochs override for all runs
   --retry_failed N        Retry failed runs N times (default: 0)
   --skip_completed        Skip runs with existing test_metrics.yaml (default)
@@ -188,7 +190,27 @@ build_fail_branch() {
     printf "%s\n" "${experiments[@]}"
 }
 
-if [[ "$PROFILE" != "confirm_fixmatch" ]]; then
+build_mean_teacher_first_profile() {
+    local experiments=(
+        "mean_teacher_100_seed42|$OUTPUT_DIR/mean_teacher_100_seed42|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 100 --seed 42 --output_dir \"$OUTPUT_DIR/mean_teacher_100_seed42\""
+        "mean_teacher_100_seed43|$OUTPUT_DIR/mean_teacher_100_seed43|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 100 --seed 43 --output_dir \"$OUTPUT_DIR/mean_teacher_100_seed43\""
+        "mean_teacher_100_seed44|$OUTPUT_DIR/mean_teacher_100_seed44|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 100 --seed 44 --output_dir \"$OUTPUT_DIR/mean_teacher_100_seed44\""
+        "mean_teacher_250_seed42|$OUTPUT_DIR/mean_teacher_250_seed42|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 250 --seed 42 --output_dir \"$OUTPUT_DIR/mean_teacher_250_seed42\""
+        "mean_teacher_250_seed43|$OUTPUT_DIR/mean_teacher_250_seed43|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 250 --seed 43 --output_dir \"$OUTPUT_DIR/mean_teacher_250_seed43\""
+        "mean_teacher_250_seed44|$OUTPUT_DIR/mean_teacher_250_seed44|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 250 --seed 44 --output_dir \"$OUTPUT_DIR/mean_teacher_250_seed44\""
+        "supervised_nofreeze_100_seed42|$OUTPUT_DIR/supervised_nofreeze_100_seed42|python3 scripts/train_supervised.py --config \"$SUPERVISED_NOFREEZE_CONFIG\" --labeled_subset 100 --seed 42 --output_dir \"$OUTPUT_DIR/supervised_nofreeze_100_seed42\""
+        "supervised_nofreeze_100_seed43|$OUTPUT_DIR/supervised_nofreeze_100_seed43|python3 scripts/train_supervised.py --config \"$SUPERVISED_NOFREEZE_CONFIG\" --labeled_subset 100 --seed 43 --output_dir \"$OUTPUT_DIR/supervised_nofreeze_100_seed43\""
+        "supervised_nofreeze_250_seed42|$OUTPUT_DIR/supervised_nofreeze_250_seed42|python3 scripts/train_supervised.py --config \"$SUPERVISED_NOFREEZE_CONFIG\" --labeled_subset 250 --seed 42 --output_dir \"$OUTPUT_DIR/supervised_nofreeze_250_seed42\""
+        "supervised_nofreeze_250_seed43|$OUTPUT_DIR/supervised_nofreeze_250_seed43|python3 scripts/train_supervised.py --config \"$SUPERVISED_NOFREEZE_CONFIG\" --labeled_subset 250 --seed 43 --output_dir \"$OUTPUT_DIR/supervised_nofreeze_250_seed43\""
+        "supervised_500_seed42|$OUTPUT_DIR/supervised_500_seed42|python3 scripts/train_supervised.py --config \"$SUPERVISED_CONFIG\" --labeled_subset 500 --seed 42 --output_dir \"$OUTPUT_DIR/supervised_500_seed42\""
+        "mean_teacher_500_seed42|$OUTPUT_DIR/mean_teacher_500_seed42|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 500 --seed 42 --output_dir \"$OUTPUT_DIR/mean_teacher_500_seed42\""
+        "supervised_500_seed43|$OUTPUT_DIR/supervised_500_seed43|python3 scripts/train_supervised.py --config \"$SUPERVISED_CONFIG\" --labeled_subset 500 --seed 43 --output_dir \"$OUTPUT_DIR/supervised_500_seed43\""
+        "mean_teacher_500_seed43|$OUTPUT_DIR/mean_teacher_500_seed43|python3 scripts/train_mean_teacher.py --config \"$MEAN_TEACHER_CONFIG\" --labeled 500 --seed 43 --output_dir \"$OUTPUT_DIR/mean_teacher_500_seed43\""
+    )
+    printf "%s\n" "${experiments[@]}"
+}
+
+if [[ "$PROFILE" != "confirm_fixmatch" && "$PROFILE" != "mean_teacher_first" ]]; then
     log "ERROR: Unsupported profile '$PROFILE'"
     exit 1
 fi
@@ -214,12 +236,17 @@ RESCUE_DECISION=$(printf "%s\n" "$RESCUE_SUMMARY_JSON" | python3 -c 'import json
 RESCUE_LABEL=$(printf "%s\n" "$RESCUE_SUMMARY_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["promotion_gate"]["decision_label"])')
 log "Rescue decision: $RESCUE_LABEL"
 
-if [[ "$RESCUE_DECISION" == "keep_fixmatch" ]]; then
-    log "Branch selected: FixMatch confirmation"
-    EXPERIMENTS="$(build_pass_branch)"
+if [[ "$PROFILE" == "mean_teacher_first" ]]; then
+    log "Profile selected: Mean Teacher first"
+    EXPERIMENTS="$(build_mean_teacher_first_profile)"
 else
-    log "Branch selected: Mean Teacher fallback"
-    EXPERIMENTS="$(build_fail_branch)"
+    if [[ "$RESCUE_DECISION" == "keep_fixmatch" ]]; then
+        log "Branch selected: FixMatch confirmation"
+        EXPERIMENTS="$(build_pass_branch)"
+    else
+        log "Branch selected: Mean Teacher fallback"
+        EXPERIMENTS="$(build_fail_branch)"
+    fi
 fi
 
 while IFS= read -r entry; do
