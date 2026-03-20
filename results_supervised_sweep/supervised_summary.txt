@@ -1,0 +1,26 @@
+Supervised Sweep Summary
+========================
+
+run_name                       backbone        size  opt     ls     seed  val_auc  test_auc  sens     spec
+-----------------------------  --------------  ----  ------  -----  ----  -------  --------  -------  -------
+default_nofreeze_res1024_seed42 efficientnet-b0 1024  adam     0.00    42   0.6689    0.5980   0.3287   0.7798
+default_nofreeze_res1024_seed43 efficientnet-b0 1024  adam     0.00    43   0.6866    0.5923   0.4336   0.6927
+default_nofreeze_res1024_seed44 efficientnet-b0 1024  adam     0.00    44   0.7106    0.6306   0.4825   0.6927
+default_nofreeze_res512_seed42 efficientnet-b0  512  adam     0.00    42   0.8743    0.7944   0.7972   0.6606
+default_nofreeze_res512_seed43 efficientnet-b0  512  adam     0.00    43   0.8448    0.7175   0.6503   0.6284
+default_nofreeze_res512_seed44 efficientnet-b0  512  adam     0.00    44   0.8535    0.7436   0.6993   0.6514
+default_nofreeze_res768_seed42 efficientnet-b0  768  adam     0.00    42   0.6986    0.6547   0.6294   0.6055
+default_nofreeze_res768_seed43 efficientnet-b0  768  adam     0.00    43   0.7508    0.6427   0.5035   0.7248
+default_nofreeze_res768_seed44 efficientnet-b0  768  adam     0.00    44   0.7894    0.7419   0.8252   0.4862
+
+Grouped Means
+-------------
+backbone        size  opt     ls     labeled  runs  mean_val_auc  mean_test_auc  mean_sens  mean_spec
+--------------  ----  ------  -----  -------  ----  ------------  -------------  ---------  ---------
+efficientnet-b0  512  adam     0.00      500     3        0.8575         0.7518     0.7156     0.6468
+efficientnet-b0  768  adam     0.00      500     3        0.7463         0.6798     0.6527     0.6055
+efficientnet-b0 1024  adam     0.00      500     3        0.6887         0.6070     0.4149     0.7217
+
+Recommendation
+--------------
+Best grouped candidate so far: efficientnet-b0 at 512px with adam (label_smoothing=0.00), mean val AUC 0.8575.
