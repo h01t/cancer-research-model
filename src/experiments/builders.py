@@ -14,6 +14,7 @@ from src.data import (
     FixMatchUnlabeledDataset,
     TeacherStudentUnlabeledDataset,
     TransformSubset,
+    build_dataset,
     get_transforms,
     patient_aware_split,
     sample_balanced_labeled_indices,
@@ -60,7 +61,8 @@ def _get_common_loader_kwargs(config: dict, device: torch.device) -> dict[str, A
 
 
 def _build_raw_train_dataset(config: dict) -> CBISDDSMDataset:
-    return CBISDDSMDataset(
+    return build_dataset(
+        dataset_name=config["dataset"].get("name", "cbis-ddsm"),
         split="train",
         abnormality_type=config["dataset"]["abnormality_type"],
         labeled_subset_size=None,
@@ -70,7 +72,8 @@ def _build_raw_train_dataset(config: dict) -> CBISDDSMDataset:
 
 
 def _build_test_dataset(config: dict, test_transform: Any) -> CBISDDSMDataset:
-    return CBISDDSMDataset(
+    return build_dataset(
+        dataset_name=config["dataset"].get("name", "cbis-ddsm"),
         split="test",
         abnormality_type=config["dataset"]["abnormality_type"],
         labeled_subset_size=None,

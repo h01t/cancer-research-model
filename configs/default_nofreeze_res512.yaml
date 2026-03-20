@@ -1,4 +1,4 @@
-# Default supervised configuration with no backbone freezing.
+# Supervised anchor at 512px.
 
 dataset:
   name: "cbis-ddsm"

@@ -12,6 +12,7 @@ import pandas as pd
 import torch
 import yaml
 
+from src.data import extract_metadata_frame
 from src.models.efficientnet import EfficientNetClassifier
 from src.training import BaseTrainer, FixMatchTrainer, MeanTeacherTrainer, get_device
 from src.training.ema import EMAModel
@@ -71,13 +72,12 @@ def build_experiment_context(
 
 def create_model(config: dict) -> EfficientNetClassifier:
     model_name = config["model"]["name"].lower()
-    if model_name != "efficientnet-b0":
-        raise ValueError(f"Unsupported model: {model_name}")
     return EfficientNetClassifier(
         num_classes=config["model"]["num_classes"],
         pretrained=config["model"]["pretrained"],
         dropout_rate=config["model"]["dropout_rate"],
         freeze_backbone=config["model"].get("freeze_backbone", False),
+        backbone_name=model_name,
     )
 
 
@@ -149,3 +149,13 @@ def evaluate_and_persist_results(
     pd.DataFrame(trainer.history).to_csv(output_dir / "training_history.csv", index=False)
     trainer._close_loggers()
     return threshold, val_metrics, test_metrics
+
+
+def collect_loader_predictions(trainer, data_loader) -> tuple[float, pd.DataFrame]:
+    """Run prediction on a loader and return probabilities joined with metadata."""
+    loss, y_true, y_prob = trainer.predict(data_loader)
+    metadata = extract_metadata_frame(data_loader.dataset).copy()
+    metadata["y_true"] = y_true
+    metadata["y_prob"] = y_prob
+    metadata["loss"] = loss
+    return loss, metadata

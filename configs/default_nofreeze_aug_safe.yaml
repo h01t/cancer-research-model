@@ -1,4 +1,4 @@
-# Default supervised configuration with no backbone freezing.
+# Mammography-safer augmentation sweep.
 
 dataset:
   name: "cbis-ddsm"
@@ -45,9 +45,9 @@ ssl:
 augmentation:
   weak:
     random_horizontal_flip: true
-    random_vertical_flip: true
-    random_rotation: 5
-    color_jitter: 0.1
+    random_vertical_flip: false
+    random_rotation: 3
+    color_jitter: 0.0
 
 logging:
   save_freq: 10

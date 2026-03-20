@@ -67,6 +67,26 @@ class TestModelForward:
         for param in model.backbone.features.parameters():
             assert param.requires_grad
 
+    def test_forward_shape_b2(self):
+        model = EfficientNetClassifier(
+            num_classes=2,
+            pretrained=False,
+            backbone_name="efficientnet-b2",
+        )
+        x = torch.randn(2, 3, 32, 32)
+        out = model(x)
+        assert out.shape == (2, 2)
+
+    def test_forward_shape_b3(self):
+        model = EfficientNetClassifier(
+            num_classes=2,
+            pretrained=False,
+            backbone_name="efficientnet-b3",
+        )
+        x = torch.randn(2, 3, 32, 32)
+        out = model(x)
+        assert out.shape == (2, 2)
+
 
 class TestTrainerInit:
     """Test BaseTrainer initialization."""

@@ -5,8 +5,10 @@ All tests use mock data — no CBIS-DDSM dataset required.
 """
 
 import pytest
+import pandas as pd
+from torch.utils.data import Subset
 
-from src.data.dataset import patient_aware_split
+from src.data.dataset import extract_metadata_frame, patient_aware_split
 
 
 class MockDataset:
@@ -145,3 +147,26 @@ class TestPatientAwareSplit:
         train_patients = {ds.patient_ids[i] for i in train_idx}
         val_patients = {ds.patient_ids[i] for i in val_idx}
         assert train_patients.isdisjoint(val_patients)
+
+
+class MockMetadataDataset:
+    def __init__(self):
+        self.frame = pd.DataFrame(
+            {
+                "patient_id": ["A", "A", "B"],
+                "exam_id": ["A_L", "A_R", "B_L"],
+                "label": [0, 1, 0],
+            }
+        )
+
+    def get_metadata_frame(self):
+        return self.frame.copy()
+
+
+class TestMetadataExtraction:
+    def test_extract_metadata_from_subset(self):
+        dataset = MockMetadataDataset()
+        subset = Subset(dataset, [2, 0])
+        frame = extract_metadata_frame(subset)
+
+        assert list(frame["patient_id"]) == ["B", "A"]

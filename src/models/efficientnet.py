@@ -1,25 +1,34 @@
 """
-EfficientNet-B0 classifier using torchvision (official PyTorch implementation).
+Classifier backbones for supervised mammography experiments.
 
-Replaces the third-party `efficientnet-pytorch` package.
+Currently supports EfficientNet-B0/B2/B3 via torchvision.
 """
 
 import logging
 
 import torch
 import torch.nn as nn
-from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
+from torchvision.models import (
+    EfficientNet_B0_Weights,
+    EfficientNet_B2_Weights,
+    EfficientNet_B3_Weights,
+    efficientnet_b0,
+    efficientnet_b2,
+    efficientnet_b3,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class EfficientNetClassifier(nn.Module):
-    """EfficientNet-B0 for binary classification.
+_EFFICIENTNET_BUILDERS = {
+    "efficientnet-b0": (efficientnet_b0, EfficientNet_B0_Weights.IMAGENET1K_V1),
+    "efficientnet-b2": (efficientnet_b2, EfficientNet_B2_Weights.IMAGENET1K_V1),
+    "efficientnet-b3": (efficientnet_b3, EfficientNet_B3_Weights.IMAGENET1K_V1),
+}
 
-    Uses torchvision's official EfficientNet implementation with
-    optional ImageNet pretrained weights, configurable dropout,
-    and optional backbone freezing.
-    """
+
+class EfficientNetClassifier(nn.Module):
+    """EfficientNet classifier for binary mammography classification."""
 
     def __init__(
         self,
@@ -27,27 +36,32 @@ class EfficientNetClassifier(nn.Module):
         pretrained: bool = True,
         dropout_rate: float = 0.2,
         freeze_backbone: bool = False,
+        backbone_name: str = "efficientnet-b0",
     ):
         super().__init__()
         self.num_classes = num_classes
+        self.backbone_name = backbone_name.lower()
 
-        # Load model with or without pretrained weights
+        if self.backbone_name not in _EFFICIENTNET_BUILDERS:
+            raise ValueError(f"Unsupported EfficientNet backbone: {backbone_name}")
+
+        builder, pretrained_weights = _EFFICIENTNET_BUILDERS[self.backbone_name]
+        weights = pretrained_weights if pretrained else None
+        self.backbone = builder(weights=weights)
+        self.feature_dim = self.backbone.classifier[1].in_features
+
         if pretrained:
-            weights = EfficientNet_B0_Weights.IMAGENET1K_V1
-            self.backbone = efficientnet_b0(weights=weights)
-            logger.info("Loaded EfficientNet-B0 with ImageNet pretrained weights")
+            logger.info(
+                "Loaded %s with ImageNet pretrained weights", self.backbone_name
+            )
         else:
-            self.backbone = efficientnet_b0(weights=None)
-            logger.info("Loaded EfficientNet-B0 without pretrained weights")
+            logger.info("Loaded %s without pretrained weights", self.backbone_name)
 
-        # Replace classifier head
-        in_features = self.backbone.classifier[1].in_features
         self.backbone.classifier = nn.Sequential(
             nn.Dropout(p=dropout_rate, inplace=True),
-            nn.Linear(in_features, num_classes),
+            nn.Linear(self.feature_dim, num_classes),
         )
 
-        # Optional backbone freezing (fine-tune only the classifier head)
         if freeze_backbone:
             self._freeze_backbone()
 
@@ -67,10 +81,7 @@ class EfficientNetClassifier(nn.Module):
         return self.backbone(x)
 
     def get_features(self, x: torch.Tensor) -> torch.Tensor:
-        """Extract feature vector before classification head.
-
-        Useful for t-SNE/UMAP embedding visualization.
-        """
+        """Extract feature vector before classification head."""
         x = self.backbone.features(x)
         x = self.backbone.avgpool(x)
         x = torch.flatten(x, 1)

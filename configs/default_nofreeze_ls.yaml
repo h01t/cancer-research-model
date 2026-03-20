@@ -1,4 +1,4 @@
-# Default supervised configuration with no backbone freezing.
+# Supervised loss sweep: label smoothing.
 
 dataset:
   name: "cbis-ddsm"
@@ -30,7 +30,7 @@ training:
   gradient_clipping: true
   max_grad_norm: 1.0
   class_weighted_loss: true
-  label_smoothing: 0.0
+  label_smoothing: 0.1
 
 ssl:
   method: "fixmatch"

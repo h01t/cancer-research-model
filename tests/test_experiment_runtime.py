@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from src.experiments.runtime import (
     build_experiment_context,
+    collect_loader_predictions,
     compute_class_weights,
     create_model,
     create_trainer,
@@ -124,3 +125,23 @@ class TestExperimentRuntime:
             scalar_tags = [args[0] for args, _ in writer.scalars]
             assert "val/decision_threshold" in scalar_tags
             assert "test/decision_threshold" in scalar_tags
+
+    def test_collect_loader_predictions_attaches_metadata(self, base_config, tmp_path):
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(yaml.safe_dump(base_config))
+        context = build_experiment_context(
+            config_path=str(config_path),
+            output_dir=str(tmp_path / "run"),
+            seed=42,
+            overrides={"experiment": {"method": "supervised"}},
+        )
+
+        model = create_model(context.config)
+        trainer = create_trainer("supervised", model, context, class_weights=None)
+        loader = DataLoader(SyntheticDataset(size=6, image_size=32), batch_size=2)
+
+        loss, frame = collect_loader_predictions(trainer, loader)
+
+        assert isinstance(loss, float)
+        assert len(frame) == 6
+        assert {"y_true", "y_prob", "patient_id", "exam_id"}.issubset(frame.columns)

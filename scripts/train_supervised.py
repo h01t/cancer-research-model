@@ -3,7 +3,7 @@
 Train supervised baseline on CBIS-DDSM dataset.
 
 Usage:
-    python scripts/train_supervised.py --config configs/default.yaml --labeled_subset 100
+    python scripts/train_supervised.py --config configs/default_nofreeze.yaml --labeled_subset 100
     python scripts/train_supervised.py --config configs/test.yaml --output_dir results/test
 """
 
@@ -35,7 +35,7 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/default.yaml",
+        default="configs/default_nofreeze.yaml",
         help="Path to configuration file",
     )
     parser.add_argument(

@@ -20,6 +20,7 @@ def base_config():
     """Minimal training config for tests."""
     return {
         "dataset": {
+            "name": "cbis-ddsm",
             "data_dir": "data",
             "abnormality_type": "mass",
             "image_size": 32,
@@ -132,3 +133,24 @@ class SyntheticDataset(torch.utils.data.Dataset):
             "benign": sum(1 for l in self.labels if l == 0),
             "malignant": sum(1 for l in self.labels if l == 1),
         }
+
+    def get_metadata_frame(self):
+        import pandas as pd
+
+        rows = []
+        for idx, label in enumerate(self.labels):
+            rows.append(
+                {
+                    "jpeg_path": f"synthetic_{idx}.png",
+                    "label": label,
+                    "patient_id": f"P_{idx // 2:03d}",
+                    "exam_id": f"E_{idx // 2:03d}",
+                    "laterality": "LEFT" if idx % 2 == 0 else "RIGHT",
+                    "view": "CC" if idx % 2 == 0 else "MLO",
+                    "abnormality_type": "mass",
+                    "dataset_name": "synthetic",
+                    "source_id": "synthetic",
+                    "pathology": "MALIGNANT" if label == 1 else "BENIGN",
+                }
+            )
+        return pd.DataFrame(rows)

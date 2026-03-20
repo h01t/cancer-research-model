@@ -5,7 +5,16 @@ Tests for classification metrics, including edge cases.
 import numpy as np
 import pytest
 
-from src.training.metrics import aggregate_metrics, compute_metrics, find_best_threshold
+from src.training.metrics import (
+    aggregate_group_predictions,
+    aggregate_metrics,
+    calibration_table,
+    compute_calibration_metrics,
+    compute_metrics,
+    find_best_threshold,
+    subgroup_metrics_table,
+    threshold_for_target_sensitivity,
+)
 
 
 class TestComputeMetrics:
@@ -99,3 +108,60 @@ class TestThresholdSelection:
         assert metrics["youden_j"] >= 0.0
         assert metrics["sensitivity"] == 1.0
         assert metrics["specificity"] == 1.0
+
+    def test_threshold_for_target_sensitivity(self):
+        y_true = np.array([0, 0, 1, 1, 1])
+        y_prob = np.array([0.1, 0.2, 0.6, 0.8, 0.9])
+
+        threshold, metrics = threshold_for_target_sensitivity(y_true, y_prob, 0.66)
+
+        assert 0.0 <= threshold <= 1.0
+        assert metrics["sensitivity"] >= 0.66
+
+
+class TestClinicalMetrics:
+    def test_calibration_metrics(self):
+        y_true = np.array([0, 0, 1, 1])
+        y_prob = np.array([0.1, 0.3, 0.7, 0.9])
+
+        metrics = compute_calibration_metrics(y_true, y_prob, n_bins=4)
+
+        assert "brier_score" in metrics
+        assert "ece" in metrics
+        assert metrics["brier_score"] >= 0.0
+
+    def test_calibration_table(self):
+        y_true = np.array([0, 0, 1, 1])
+        y_prob = np.array([0.1, 0.3, 0.7, 0.9])
+
+        table = calibration_table(y_true, y_prob, n_bins=4)
+
+        assert len(table) == 4
+        assert "mean_confidence" in table.columns
+
+    def test_group_aggregation(self):
+        y_true = np.array([0, 0, 1, 1])
+        y_prob = np.array([0.2, 0.7, 0.4, 0.9])
+        groups = ["A", "A", "B", "B"]
+
+        agg_true, agg_prob = aggregate_group_predictions(y_true, y_prob, groups)
+
+        assert agg_true.tolist() == [0, 1]
+        assert agg_prob.tolist() == [0.7, 0.9]
+
+    def test_subgroup_metrics_table(self):
+        import pandas as pd
+
+        metadata = pd.DataFrame(
+            {
+                "view": ["CC", "CC", "MLO", "MLO"],
+                "laterality": ["LEFT", "RIGHT", "LEFT", "RIGHT"],
+            }
+        )
+        y_true = np.array([0, 0, 1, 1])
+        y_prob = np.array([0.1, 0.4, 0.6, 0.9])
+
+        table = subgroup_metrics_table(metadata, y_true, y_prob, 0.5, ["view", "laterality"])
+
+        assert not table.empty
+        assert {"column", "value", "auc", "specificity"}.issubset(table.columns)

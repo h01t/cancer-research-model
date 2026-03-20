@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,17 @@ class CBISDDSMDataset(Dataset):
         # Create binary labels: MALIGNANT = 1, BENIGN or BENIGN_WITHOUT_CALLBACK = 0
         merged_df["label"] = merged_df["pathology"].apply(lambda x: 1 if x == "MALIGNANT" else 0)
 
+        # Standardized metadata columns for grouped evaluation and future exam-level models
+        merged_df["dataset_name"] = "cbis-ddsm"
+        merged_df["source_id"] = "cbis-ddsm"
+        merged_df["laterality"] = merged_df["left or right breast"].astype(str)
+        merged_df["view"] = merged_df["image view"].astype(str)
+        merged_df["patient_id"] = merged_df["patient_id"].astype(str)
+        merged_df["exam_id"] = merged_df.apply(
+            lambda row: f"{row['patient_id']}_{row['laterality']}",
+            axis=1,
+        )
+
         # Remove duplicate entries (same image multiple abnormalities)
         merged_df = merged_df.drop_duplicates(subset=["jpeg_path"])
 
@@ -154,6 +165,12 @@ class CBISDDSMDataset(Dataset):
         if n_malignant + n_benign < n:
             logger.warning(f"Requested {n} samples but only {n_malignant + n_benign} available")
 
+        sampled = pd.concat(
+            [
+                malignant.sample(n=n_malignant, random_state=42),
+                benign.sample(n=n_benign, random_state=42),
+            ]
+        ).sample(frac=1.0, random_state=42)
         return sampled.reset_index(drop=True)
 
     def __len__(self):
@@ -199,6 +216,42 @@ class CBISDDSMDataset(Dataset):
         benign = sum(1 for label in self.labels if label == 0)
         malignant = sum(1 for label in self.labels if label == 1)
         return {"benign": benign, "malignant": malignant}
+
+    def get_metadata_frame(self, indices: list[int] | None = None) -> pd.DataFrame:
+        """Return standardized metadata aligned to dataset item order."""
+        columns = [
+            "jpeg_path",
+            "label",
+            "patient_id",
+            "exam_id",
+            "laterality",
+            "view",
+            "abnormality_type",
+            "dataset_name",
+            "source_id",
+            "pathology",
+        ]
+        available_columns = [col for col in columns if col in self.df.columns]
+        frame = self.df.loc[:, available_columns].copy().reset_index(drop=True)
+        if indices is not None:
+            frame = frame.iloc[list(indices)].reset_index(drop=True)
+        return frame
+
+
+def extract_metadata_frame(dataset: Dataset | Subset) -> pd.DataFrame:
+    """Resolve a metadata frame from nested dataset/subset wrappers."""
+    if hasattr(dataset, "get_metadata_frame"):
+        return dataset.get_metadata_frame()
+
+    if isinstance(dataset, Subset):
+        base = extract_metadata_frame(dataset.dataset)
+        return base.iloc[list(dataset.indices)].reset_index(drop=True)
+
+    wrapped = getattr(dataset, "dataset", None)
+    if wrapped is not None:
+        return extract_metadata_frame(wrapped)
+
+    raise TypeError(f"Dataset type does not expose metadata: {type(dataset)!r}")
 
 
 def patient_aware_split(

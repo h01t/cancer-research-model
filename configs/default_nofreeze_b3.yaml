@@ -1,4 +1,4 @@
-# Default supervised configuration with no backbone freezing.
+# Backbone sweep: EfficientNet-B3.
 
 dataset:
   name: "cbis-ddsm"
@@ -8,15 +8,15 @@ dataset:
   labeled_subset_size: null
 
 model:
-  name: "efficientnet-b0"
+  name: "efficientnet-b3"
   num_classes: 2
   pretrained: true
-  dropout_rate: 0.2
+  dropout_rate: 0.3
   freeze_backbone: false
   freeze_backbone_epochs: 0
 
 training:
-  batch_size: 8
+  batch_size: 4
   num_epochs: 100
   learning_rate: 0.001
   weight_decay: 0.0001
@@ -25,7 +25,7 @@ training:
   scheduler: "cosine"
   warmup_epochs: 5
   early_stopping_patience: 20
-  num_workers: 20
+  num_workers: 10
   use_amp: true
   gradient_clipping: true
   max_grad_norm: 1.0
