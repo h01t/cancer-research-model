@@ -31,6 +31,7 @@ class TestSSLClosureSummary:
     def test_closure_summary_prefers_nofreeze_supervised(self, tmp_path):
         rescue_dir = tmp_path / "results_rescue"
         followup_dir = tmp_path / "results_followup"
+        nofreeze_dir = tmp_path / "results_nofreeze_baseline"
         output_dir = tmp_path / "results_closure"
 
         for seed, val_auc in [(42, 0.61), (43, 0.62), (44, 0.60)]:
@@ -39,11 +40,16 @@ class TestSSLClosureSummary:
             write_metrics(rescue_dir / f"supervised_250_seed{seed}", 0.71, 0.69)
             write_metrics(rescue_dir / f"fixmatch_250_seed{seed}", 0.68, 0.58)
 
-        for seed, val_auc in [(42, 0.75), (43, 0.76), (44, 0.74)]:
+        for seed, val_auc in [(42, 0.75), (43, 0.76)]:
             write_metrics(followup_dir / f"supervised_nofreeze_100_seed{seed}", val_auc, 0.66)
+        write_metrics(nofreeze_dir / "supervised_nofreeze_100_seed44", 0.74, 0.66)
 
-        for seed, val_auc in [(42, 0.82), (43, 0.87), (44, 0.81)]:
+        for seed, val_auc in [(42, 0.82), (43, 0.87)]:
             write_metrics(followup_dir / f"supervised_nofreeze_250_seed{seed}", val_auc, 0.74)
+        write_metrics(nofreeze_dir / "supervised_nofreeze_250_seed44", 0.81, 0.74)
+
+        for seed, val_auc in [(42, 0.87), (43, 0.84), (44, 0.85)]:
+            write_metrics(nofreeze_dir / f"supervised_nofreeze_500_seed{seed}", val_auc, 0.75)
 
         for seed, val_auc in [(42, 0.63), (43, 0.62), (44, 0.61)]:
             write_metrics(followup_dir / f"mean_teacher_100_seed{seed}", val_auc, 0.53)
@@ -59,6 +65,8 @@ class TestSSLClosureSummary:
                 str(rescue_dir),
                 "--followup_dir",
                 str(followup_dir),
+                "--nofreeze_dir",
+                str(nofreeze_dir),
                 "--output_dir",
                 str(output_dir),
             ],
@@ -70,6 +78,7 @@ class TestSSLClosureSummary:
 
         summary_text = (output_dir / "ssl_closure_summary.txt").read_text()
         assert "Official baseline: supervised no-freeze." in summary_text
+        assert "The official 500-label no-freeze baseline currently has mean val AUC" in summary_text
         assert "close the vanilla SSL chapter for now" in summary_text
         assert "supervised_nofreeze" in summary_text
         assert "ssl_closure_summary.csv" not in result.stdout

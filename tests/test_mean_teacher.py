@@ -4,6 +4,7 @@ Tests for the Mean Teacher training pipeline.
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -125,3 +126,50 @@ class TestMeanTeacherTrainer:
             assert trainer2.current_consistency_weight == pytest.approx(0.5)
             assert trainer2.backbone_unfrozen is True
             assert len(trainer2.ema.shadow) > 0
+
+    def test_tensorboard_logs_consistency_scalars(self, base_config, tmp_path):
+        config = self._make_config(base_config)
+        config["tensorboard"]["enabled"] = True
+
+        class DummyWriter:
+            def __init__(self, log_dir, flush_secs):
+                self.scalars = []
+
+            def add_scalar(self, *args, **kwargs):
+                self.scalars.append((args, kwargs))
+
+            def add_pr_curve(self, *args, **kwargs):
+                pass
+
+            def close(self):
+                pass
+
+        with patch("src.training.trainer._get_summary_writer_cls", return_value=DummyWriter):
+            config["training"]["num_epochs"] = 1
+            model = EfficientNetClassifier(num_classes=2, pretrained=False)
+            trainer = MeanTeacherTrainer(model, config, output_dir=tmp_path)
+
+            weak_t = get_transforms("weak", image_size=32)
+            student_t = get_transforms("mild_strong", image_size=32)
+
+            labeled = FixMatchLabeledDataset(
+                SyntheticDataset(size=8, image_size=32, return_pil=True),
+                weak_transform=weak_t,
+            )
+            unlabeled = TeacherStudentUnlabeledDataset(
+                SyntheticDataset(size=16, image_size=32, return_pil=True),
+                teacher_transform=weak_t,
+                student_transform=student_t,
+            )
+            val_dataset = SyntheticDataset(size=4, image_size=32)
+
+            labeled_loader = DataLoader(labeled, batch_size=2, drop_last=True)
+            unlabeled_loader = DataLoader(unlabeled, batch_size=4, drop_last=True)
+            val_loader = DataLoader(val_dataset, batch_size=2)
+
+            trainer.train(labeled_loader, unlabeled_loader, val_loader)
+
+            scalar_tags = [args[0] for args, _ in trainer.tb_writer.scalars]
+            assert "train/sup_loss" in scalar_tags
+            assert "train/consistency_loss" in scalar_tags
+            assert "train/consistency_weight" in scalar_tags

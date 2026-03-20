@@ -1,11 +1,11 @@
 #!/bin/bash
-# Quick-start script for SSL Mammography project
-# Validates the environment and runs a quick test training.
+# Quick-start script for the supervised-first mammography project.
+# Validates the environment and runs a quick supervised smoke test.
 
 set -e
 
 echo "========================================="
-echo "SSL Mammography - Quick Start"
+echo "Mammography Classification - Quick Start"
 echo "========================================="
 
 # Check Python version (3.10+)
@@ -54,7 +54,8 @@ echo ""
 echo "========================================="
 echo "Quick start completed!"
 echo "Next steps:"
-echo "  1. Review USER_GUIDE.md for detailed instructions"
-echo "  2. Run ablation study: ./run_ablation.sh"
-echo "  3. Explore notebooks in notebooks/"
+echo "  1. Review USER_GUIDE.md for the supervised-first workflow"
+echo "  2. Train the official baseline with configs/default_nofreeze.yaml"
+echo "  3. Run ./run_nofreeze_baseline_sweep.sh for the multi-seed baseline sweep"
+echo "  4. Explore notebooks in notebooks/ and reports/ for analysis"
 echo "========================================="

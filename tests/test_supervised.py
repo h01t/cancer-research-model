@@ -6,6 +6,7 @@ All tests use synthetic data — no CBIS-DDSM dataset required.
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -104,6 +105,39 @@ class TestTrainerInit:
         assert 0.0 <= threshold <= 1.0
         assert metrics["decision_threshold"] == threshold
         assert "youden_j" in metrics
+
+    def test_tensorboard_disabled_does_not_require_dependency(self, base_config):
+        model = EfficientNetClassifier(num_classes=2, pretrained=False)
+        trainer = BaseTrainer(model, base_config)
+        assert trainer.tb_writer is None
+
+    def test_tensorboard_enabled_initializes_writer(self, base_config, tmp_path):
+        base_config["tensorboard"]["enabled"] = True
+
+        class DummyWriter:
+            def __init__(self, log_dir, flush_secs):
+                self.log_dir = log_dir
+                self.flush_secs = flush_secs
+                self.scalars = []
+                self.closed = False
+
+            def add_scalar(self, *args, **kwargs):
+                self.scalars.append((args, kwargs))
+
+            def add_pr_curve(self, *args, **kwargs):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        model = EfficientNetClassifier(num_classes=2, pretrained=False)
+        with patch("src.training.trainer._get_summary_writer_cls", return_value=DummyWriter):
+            trainer = BaseTrainer(model, base_config, output_dir=tmp_path)
+            assert trainer.tb_writer is not None
+            trainer._log_tensorboard({"train/loss": 1.23}, step=2)
+            assert trainer.tb_writer.scalars
+            trainer._close_loggers()
+            assert trainer.tb_writer is None
 
 
 class TestTrainingLoop:

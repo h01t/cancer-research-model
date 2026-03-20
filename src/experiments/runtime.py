@@ -131,8 +131,15 @@ def evaluate_and_persist_results(
 ) -> tuple[float, dict[str, float], dict[str, float]]:
     reload_best_checkpoint(trainer, output_dir)
     with applied_ema(ema, trainer.model):
+        val_loss, val_y_true, val_y_prob = trainer.predict(val_loader)
         threshold, val_metrics = trainer.tune_decision_threshold(val_loader)
+        test_loss, test_y_true, test_y_prob = trainer.predict(test_loader)
         test_metrics = trainer.evaluate(test_loader, decision_threshold=threshold)
+
+        val_metrics["loss"] = val_loss
+        test_metrics["loss"] = test_loss
+        trainer._log_eval_curves("val", val_y_true, val_y_prob, threshold, val_metrics)
+        trainer._log_eval_curves("test", test_y_true, test_y_prob, threshold, test_metrics)
 
     with open(output_dir / "val_metrics.yaml", "w") as f:
         yaml.dump({k: float(v) for k, v in val_metrics.items()}, f)
@@ -140,4 +147,5 @@ def evaluate_and_persist_results(
         yaml.dump({k: float(v) for k, v in test_metrics.items()}, f)
 
     pd.DataFrame(trainer.history).to_csv(output_dir / "training_history.csv", index=False)
+    trainer._close_loggers()
     return threshold, val_metrics, test_metrics

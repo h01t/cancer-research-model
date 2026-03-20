@@ -301,18 +301,19 @@ class MeanTeacherTrainer(BaseTrainer):
                 f"AUC: {val_metrics.get('auc', 0.0):.4f}"
             )
 
-            self._log_wandb(
+            self._log_metrics(
                 {
                     "train/loss": train_loss,
                     "train/sup_loss": train_metrics["sup_loss"],
                     "train/consistency_loss": train_metrics["consistency_loss"],
                     "train/accuracy": train_metrics["accuracy"],
                     "train/auc": train_metrics.get("auc", 0.0),
+                    "train/consistency_weight": self.current_consistency_weight,
+                    "train/backbone_unfrozen": float(self.backbone_unfrozen),
                     "val/loss": val_loss,
                     "val/accuracy": val_metrics["accuracy"],
                     "val/auc": val_metrics.get("auc", 0.0),
                     "learning_rate": current_lr,
-                    "train/consistency_weight": self.current_consistency_weight,
                 },
                 step=epoch,
             )
@@ -330,8 +331,3 @@ class MeanTeacherTrainer(BaseTrainer):
                 if self.epochs_without_improvement >= self.early_stopping_patience:
                     print(f"  Early stopping triggered after {epoch + 1} epochs")
                     break
-
-        if self.use_wandb and self.wandb_run is not None:
-            import wandb
-
-            wandb.finish()

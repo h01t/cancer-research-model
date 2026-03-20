@@ -6,6 +6,7 @@ All tests use synthetic data — no CBIS-DDSM dataset required.
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -211,6 +212,52 @@ class TestFixMatchTrainer:
             assert len(trainer.history["train_loss"]) == 2
             assert len(trainer.history["sup_loss"]) == 2
             assert len(trainer.history["mask_ratio"]) == 2
+
+    def test_tensorboard_logs_ssl_scalars(self, base_config, tmp_path):
+        base_config["tensorboard"]["enabled"] = True
+
+        class DummyWriter:
+            def __init__(self, log_dir, flush_secs):
+                self.scalars = []
+
+            def add_scalar(self, *args, **kwargs):
+                self.scalars.append((args, kwargs))
+
+            def add_pr_curve(self, *args, **kwargs):
+                pass
+
+            def close(self):
+                pass
+
+        with patch("src.training.trainer._get_summary_writer_cls", return_value=DummyWriter):
+            base_config["training"]["num_epochs"] = 1
+            model = EfficientNetClassifier(num_classes=2, pretrained=False)
+            trainer = FixMatchTrainer(model, base_config, output_dir=tmp_path)
+
+            raw = SyntheticDataset(size=8, image_size=32, return_pil=True)
+            weak_t = get_transforms("weak", image_size=32)
+            strong_t = get_transforms("strong", image_size=32)
+
+            labeled = FixMatchLabeledDataset(raw, weak_transform=weak_t)
+            unlabeled = FixMatchUnlabeledDataset(
+                SyntheticDataset(size=16, image_size=32, return_pil=True),
+                weak_transform=weak_t,
+                strong_transform=strong_t,
+            )
+            val_dataset = SyntheticDataset(size=4, image_size=32)
+
+            labeled_loader = DataLoader(labeled, batch_size=2, drop_last=True)
+            unlabeled_loader = DataLoader(unlabeled, batch_size=4, drop_last=True)
+            val_loader = DataLoader(val_dataset, batch_size=2)
+
+            trainer.train(labeled_loader, unlabeled_loader, val_loader)
+
+            scalar_tags = [args[0] for args, _ in trainer.tb_writer.scalars]
+            assert "train/sup_loss" in scalar_tags
+            assert "train/unsup_loss" in scalar_tags
+            assert "train/mask_ratio" in scalar_tags
+            assert "train/lambda_u" in scalar_tags
+            assert "train/confidence_threshold" in scalar_tags
 
     def test_checkpoint_roundtrip(self, base_config):
         """FixMatch checkpoint should preserve all SSL state for proper resume."""

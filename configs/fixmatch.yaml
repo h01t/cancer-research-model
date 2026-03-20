@@ -84,3 +84,8 @@ wandb:
   enabled: false
   project: "ssl-mammography"
   run_name: null               # auto-generated if null
+
+tensorboard:
+  enabled: false
+  log_dir: null
+  flush_secs: 30

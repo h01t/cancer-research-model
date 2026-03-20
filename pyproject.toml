@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 wandb = ["wandb>=0.15.0"]
+tensorboard = ["tensorboard>=2.14.0"]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -28,7 +29,7 @@ dev = [
     "black>=23.0.0",
     "jupyterlab>=3.0.0",
 ]
-all = ["ssl-mammography[wandb,dev]"]
+all = ["ssl-mammography[wandb,tensorboard,dev]"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

@@ -24,6 +24,12 @@ from .metrics import find_best_threshold
 logger = logging.getLogger(__name__)
 
 
+def _get_summary_writer_cls():
+    from torch.utils.tensorboard import SummaryWriter
+
+    return SummaryWriter
+
+
 def get_device(requested: str | None = None) -> torch.device:
     """Get the best available device.
 
@@ -158,6 +164,12 @@ class BaseTrainer:
         self.save_freq = log_cfg.get("save_freq", 10)
         self.log_freq = log_cfg.get("log_freq", 10)
 
+        # TensorBoard integration
+        self.use_tensorboard = config.get("tensorboard", {}).get("enabled", False)
+        self.tb_writer = None
+        if self.use_tensorboard:
+            self._init_tensorboard(config)
+
         # History
         self.history: dict[str, list[float]] = {
             "train_loss": [],
@@ -236,6 +248,78 @@ class BaseTrainer:
             import wandb
 
             wandb.log(metrics, step=step)
+
+    def _init_tensorboard(self, config: dict) -> None:
+        """Initialize TensorBoard logging."""
+        try:
+            summary_writer_cls = _get_summary_writer_cls()
+        except ImportError as exc:
+            raise ImportError(
+                "TensorBoard logging is enabled, but tensorboard is not installed. "
+                "Install with `pip install tensorboard` or `pip install .[tensorboard]`."
+            ) from exc
+
+        tb_cfg = config.get("tensorboard", {})
+        log_root = tb_cfg.get("log_dir")
+        if log_root:
+            tb_dir = Path(log_root) / self.output_dir.name
+        else:
+            tb_dir = self.output_dir / "tensorboard"
+        tb_dir.mkdir(parents=True, exist_ok=True)
+
+        self.tb_writer = summary_writer_cls(
+            log_dir=str(tb_dir),
+            flush_secs=int(tb_cfg.get("flush_secs", 30)),
+        )
+        logger.info("TensorBoard initialized at %s", tb_dir)
+
+    def _log_tensorboard(self, metrics: dict[str, float], step: int | None = None) -> None:
+        """Log scalar metrics to TensorBoard if enabled."""
+        if not self.use_tensorboard or self.tb_writer is None:
+            return
+
+        for key, value in metrics.items():
+            if isinstance(value, (int, float, np.integer, np.floating)):
+                self.tb_writer.add_scalar(key, float(value), global_step=step)
+
+    def _log_metrics(self, metrics: dict[str, float], step: int | None = None) -> None:
+        """Log metrics to all enabled backends."""
+        self._log_wandb(metrics, step=step)
+        self._log_tensorboard(metrics, step=step)
+
+    def _log_eval_curves(
+        self,
+        stage: str,
+        y_true: np.ndarray,
+        y_prob: np.ndarray,
+        decision_threshold: float,
+        metrics: dict[str, float],
+    ) -> None:
+        """Log evaluation curves and summary scalars to TensorBoard."""
+        if not self.use_tensorboard or self.tb_writer is None:
+            return
+
+        self.tb_writer.add_pr_curve(
+            f"{stage}/pr_curve",
+            labels=np.asarray(y_true, dtype=np.int64),
+            predictions=np.asarray(y_prob, dtype=np.float32),
+        )
+        self.tb_writer.add_scalar(f"{stage}/decision_threshold", float(decision_threshold))
+        for key in ("auc", "accuracy", "sensitivity", "specificity"):
+            if key in metrics:
+                self.tb_writer.add_scalar(f"{stage}/{key}", float(metrics[key]))
+
+    def _close_loggers(self) -> None:
+        """Close optional logging backends."""
+        if self.use_wandb and self.wandb_run is not None:
+            import wandb
+
+            wandb.finish()
+            self.wandb_run = None
+
+        if self.tb_writer is not None:
+            self.tb_writer.close()
+            self.tb_writer = None
 
     def _apply_warmup(self, epoch: int) -> None:
         """Apply linear learning rate warmup."""
@@ -388,11 +472,12 @@ class BaseTrainer:
             )
 
             # W&B logging
-            self._log_wandb(
+            self._log_metrics(
                 {
                     "train/loss": train_loss,
                     "train/accuracy": train_metrics["accuracy"],
                     "train/auc": train_metrics.get("auc", 0.0),
+                    "train/backbone_unfrozen": float(self.backbone_unfrozen),
                     "val/loss": val_loss,
                     "val/accuracy": val_metrics["accuracy"],
                     "val/auc": val_metrics.get("auc", 0.0),
@@ -416,12 +501,6 @@ class BaseTrainer:
                 if self.epochs_without_improvement >= self.early_stopping_patience:
                     print(f"  Early stopping triggered after {epoch + 1} epochs")
                     break
-
-        # Finish W&B run
-        if self.use_wandb and self.wandb_run is not None:
-            import wandb
-
-            wandb.finish()
 
     def save_checkpoint(self, epoch: int, auc: float, best: bool = False) -> None:
         """Save model checkpoint to output_dir."""

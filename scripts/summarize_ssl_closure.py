@@ -187,16 +187,19 @@ def main():
     parser = argparse.ArgumentParser(description="Summarize the final supervised-vs-SSL comparison")
     parser.add_argument("--rescue_dir", type=str, default="results_rescue")
     parser.add_argument("--followup_dir", type=str, default="results_followup")
+    parser.add_argument("--nofreeze_dir", type=str, default="results_nofreeze_baseline")
     parser.add_argument("--output_dir", type=str, default=None)
     args = parser.parse_args()
 
     rescue_dir = Path(args.rescue_dir)
     followup_dir = Path(args.followup_dir)
+    nofreeze_dir = Path(args.nofreeze_dir)
     output_dir = Path(args.output_dir) if args.output_dir else followup_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     rows = collect_rows(rescue_dir, "rescue")
     rows.extend(collect_rows(followup_dir, "followup"))
+    rows.extend(collect_rows(nofreeze_dir, "nofreeze"))
     grouped = group_means(rows)
     recommendation = build_recommendation(grouped)
     summary_text = format_summary(rows, grouped, recommendation)

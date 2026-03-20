@@ -1,67 +1,48 @@
-# SSL Mammography: Semi-Supervised Learning for Breast Cancer Detection
+# Mammography Classification Research
 
-Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to improve classification performance with limited labeled data.
+Medical imaging research on CBIS-DDSM mammography classification. The project started as a supervised-vs-SSL comparison and currently moves forward with a corrected no-freeze supervised baseline, which outperformed the vanilla FixMatch and Mean Teacher setups tested here.
 
-## Project Overview
+## Current Status
 
-- **Dataset**: CBIS-DDSM -- mammography images with benign/malignant labels
-- **Task**: Binary classification (benign vs malignant) using full mammograms at 512px
-- **SSL Methods**: Supervised baseline, FixMatch rescue path, and Mean Teacher
-- **Model**: EfficientNet-B0 (torchvision, ImageNet pretrained)
-- **Evaluation**: AUC-ROC primary metric, with accuracy, F1, sensitivity, specificity
-- **Platform**: Develops on Apple Silicon (MPS), trains on CUDA workstation
+- Active path: `supervised_nofreeze` using `configs/default_nofreeze.yaml`
+- Historical research paths: FixMatch and Mean Teacher remain in the repo for reference, but they are not the recommended training workflow
+- Final chapter-close summaries live in `reports/ssl_closure_summary.txt`, `reports/ssl_closure_summary.csv`, and `reports/final_results.md`
 
-## Key Features
+## Results
 
-- FixMatch and Mean Teacher semi-supervised training paths
-- Conservative paper-aligned SSL config (tau=0.95, lambda_u=1.0)
-- Mixed precision training (AMP) for CUDA and MPS
-- LR warmup, gradient clipping, class-weighted loss, backbone freeze/unfreeze
-- Config-driven augmentation and training pipeline
-- Ablation study across labeled data sizes (100, 250, 500, full)
-- Shared experiment runtime and dataset-builder layer for fast method iteration
-- Patient-aware train/val splits (no data leakage between patients)
-- Complete SSL state checkpoints (EMA, ramp schedules, early stopping)
-- Per-experiment result isolation with training history CSV
-- W&B integration for experiment tracking (optional)
-- 57+ unit tests with synthetic data (no real dataset required)
+Grouped mean validation AUC:
+
+| Method | 100 labels | 250 labels | 500 labels |
+|--------|------------|------------|------------|
+| Supervised (frozen historical baseline) | 0.6033 | 0.7097 | 0.8084 |
+| Supervised no-freeze (official baseline) | 0.7442 | 0.8370 | 0.8575 |
+| FixMatch | 0.6559 | 0.6788 | - |
+| Mean Teacher | 0.6325 | 0.6595 | 0.6861 |
+
+The key lesson is that the original supervised baseline was artificially weak because of the freeze behavior. Once corrected, supervised fine-tuning clearly outperformed the vanilla SSL methods explored in this repo. The next phase is stronger supervised experimentation, not more FixMatch/Mean Teacher tuning.
+
+## Current Recommended Workflow
+
+1. Train with `scripts/train_supervised.py` and `configs/default_nofreeze.yaml`
+2. Use `run_nofreeze_baseline_sweep.sh` for multi-seed baseline runs
+3. Inspect training with TensorBoard and the notebooks in `notebooks/`
+4. Treat FixMatch/Mean Teacher scripts as archived research references
 
 ## Project Structure
 
-```
+```text
 .
-├── src/                      # Source code
-│   ├── data/
-│   │   ├── dataset.py        # CBIS-DDSM dataset loader + patient-aware splitting
-│   │   ├── ssl_dataset.py    # SSL dataset wrappers (FixMatch)
-│   │   └── transforms.py     # Augmentation pipeline (weak, strong, test)
-│   ├── experiments/
-│   │   ├── builders.py       # Shared dataset/dataloader assembly
-│   │   └── runtime.py        # Shared config, eval, and result persistence
-│   ├── models/
-│   │   └── efficientnet.py   # EfficientNet-B0 classifier
-│   └── training/
-│       ├── trainer.py        # Base trainer (AMP, warmup, grad clip, checkpoints)
-│       ├── fixmatch_trainer.py  # FixMatch SSL trainer
-│       ├── mean_teacher_trainer.py  # Mean Teacher SSL trainer
-│       ├── ema.py            # Exponential Moving Average model
-│       └── metrics.py        # Classification metrics
-├── scripts/                  # Training scripts
-│   ├── train_supervised.py   # Supervised baseline
-│   └── train_fixmatch.py     # FixMatch SSL training
-│   └── train_mean_teacher.py # Mean Teacher SSL training
-├── tools/debug/              # Ad hoc debug utilities (not part of the public workflow)
-├── configs/                  # YAML configuration files
-│   ├── default.yaml          # Supervised baseline config (512px, batch 8)
-│   ├── fixmatch.yaml         # FixMatch config (paper-aligned, matches supervised base)
-│   ├── mean_teacher.yaml     # Mean Teacher SSL config
-│   └── test.yaml             # Quick validation config (224px, 2 epochs)
-├── tests/                    # Unit tests (synthetic data; no dataset required)
-├── tasks/                    # Project TODO and lessons learned
-├── run_ablation.sh           # Full ablation study script (7 experiments)
-├── pyproject.toml            # Python packaging and tool config
-├── requirements.txt          # Dependencies
-└── USER_GUIDE.md             # Comprehensive usage guide
+├── src/
+│   ├── data/                 # Dataset loading, splits, and transforms
+│   ├── experiments/          # Shared runtime and dataset builders
+│   ├── models/               # EfficientNet classifier
+│   └── training/             # Supervised + historical SSL trainers
+├── scripts/                  # Thin training and summary entrypoints
+├── configs/                  # Primary + historical experiment configs
+├── notebooks/                # Research notebooks for data/model analysis
+├── reports/                  # Compact versioned research summaries
+├── tests/                    # Synthetic-data test suite
+└── tasks/                    # Lessons learned and next steps
 ```
 
 ## Quick Start
@@ -74,121 +55,84 @@ cd ssl
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# Development tools (tests, linting)
 pip install -e ".[dev]"
 ```
 
 ### 2. Verify Installation
 
 ```bash
-# Run tests (no dataset needed)
-python -m pytest tests/ -v
-# Expected: 52 passed
+python -m pytest tests/ -q
 ```
 
-### 3. Download Dataset
+### 3. Prepare Dataset
 
-Download [CBIS-DDSM from Kaggle](https://www.kaggle.com/datasets/awsaf49/cbis-ddsm-breast-cancer-image-dataset) and extract into `data/`:
+Download [CBIS-DDSM from Kaggle](https://www.kaggle.com/datasets/awsaf49/cbis-ddsm-breast-cancer-image-dataset) and extract into:
 
-```
+```text
 data/
-├── csv/               # CSV annotation files
-└── jpeg/              # JPEG images
+├── csv/
+└── jpeg/
 ```
 
-### 4. Train
+### 4. Train The Official Baseline
 
 ```bash
-# Supervised baseline (100 labeled samples)
 python scripts/train_supervised.py \
-    --config configs/default.yaml \
-    --labeled_subset 100 \
-    --output_dir results/supervised_100
-
-# FixMatch SSL (100 labeled samples)
-python scripts/train_fixmatch.py \
-    --config configs/fixmatch.yaml \
-    --labeled 100 \
-    --output_dir results/fixmatch_100
-
-# Mean Teacher SSL (100 labeled samples)
-python scripts/train_mean_teacher.py \
-    --config configs/mean_teacher.yaml \
-    --labeled 100 \
-    --output_dir results/mean_teacher_100
-
-# Targeted rescue sweep (100/250 labels x 3 seeds)
-./run_fixmatch_rescue.sh
-
-# Full ablation study (7 experiments: supervised + FixMatch at 100/250/500/full)
-./run_ablation.sh
+  --config configs/default_nofreeze.yaml \
+  --labeled_subset 100 \
+  --output_dir results/supervised_nofreeze_100
 ```
 
-### 5. Device Selection
+### 5. Run The Official Multi-Seed Baseline Sweep
 
 ```bash
-# Auto-detect (CUDA > MPS > CPU)
-python scripts/train_supervised.py --config configs/default.yaml
-
-# Explicit device
-python scripts/train_supervised.py --config configs/default.yaml --device cuda
-python scripts/train_supervised.py --config configs/default.yaml --device mps
+./run_nofreeze_baseline_sweep.sh
 ```
 
-## Configuration
-
-Two configs are provided. They share identical base hyperparameters so ablation results isolate the SSL effect cleanly.
-
-**`configs/default.yaml`** -- supervised baseline:
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `dataset.image_size` | 512 | Input resolution |
-| `training.batch_size` | 8 | Fits 8GB VRAM at 512px |
-| `training.learning_rate` | 0.001 | Adam optimizer |
-| `training.num_epochs` | 100 | Max epochs |
-| `training.warmup_epochs` | 5 | Linear LR warmup |
-| `training.early_stopping_patience` | 20 | Patience before stopping |
-| `model.freeze_backbone` | true | Freeze backbone for first 5 epochs |
-| `training.class_weighted_loss` | true | Inverse-frequency class weights |
-
-**`configs/fixmatch.yaml`** -- FixMatch SSL (differences from supervised only):
-
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| `training.num_epochs` | 150 | More epochs for pseudo-label stabilization |
-| `training.early_stopping_patience` | 25 | More patience for SSL convergence |
-| `ssl.confidence_threshold` | 0.95 | Paper default -- only high-confidence pseudo-labels |
-| `ssl.lambda_u` | 1.0 | Paper default -- full unsupervised loss weight |
-| `ssl.use_ema` | true | EMA teacher for stable pseudo-labels |
-| `ssl.unlabeled_batch_ratio` | 2 | Unlabeled/labeled batch ratio (fits 8GB VRAM) |
-
-## SSH Workflow (Local Dev -> Remote Training)
+### 6. Analyze
 
 ```bash
-# Sync code to workstation
-rsync -avz --exclude='.venv' --exclude='data' --exclude='results' \
-    ./ user@workstation:~/ssl/
-
-# Run overnight ablation
-ssh user@workstation
-cd ~/ssl && source .venv/bin/activate
-nohup ./run_ablation.sh 2>&1 &
-
-# Pull results back
-rsync -avz user@workstation:~/ssl/results/ ./results/
+tensorboard --logdir results
 ```
 
-## Troubleshooting
+Use the notebooks in [`notebooks/`](/Users/grmim/Dev/ssl/notebooks) for:
+- data exploration
+- training curves
+- embedding inspection
+- Grad-CAM / interpretation
 
-- **Out of memory**: Reduce `training.batch_size` or `dataset.image_size` in config
-- **SSL certificate errors**: Set `model.pretrained: false` or download weights manually
-- **MPS issues**: Set `training.use_amp: false` if AMP causes issues on Apple Silicon
-- **Slow data loading**: Increase `training.num_workers` (up to CPU core count)
+## Configs
 
-## License
+- `configs/default_nofreeze.yaml`: official supervised baseline
+- `configs/default.yaml`: historical frozen supervised baseline for comparison
+- `configs/fixmatch.yaml`: archived FixMatch research config
+- `configs/mean_teacher.yaml`: archived Mean Teacher research config
+- `configs/test.yaml`: quick smoke-test config
 
-MIT License -- see LICENSE file.
+## Historical SSL Notes
 
-For detailed instructions, see [USER_GUIDE.md](USER_GUIDE.md).
+The SSL codepaths are intentionally preserved for reproducibility and comparison, but they are not the main training recommendation anymore. The repo’s current research direction is:
+
+- stronger supervised tuning
+- pretraining / representation learning
+- resolution and cropping experiments
+- calibration and thresholding refinement
+
+## TensorBoard
+
+TensorBoard is opt-in via config:
+
+```yaml
+tensorboard:
+  enabled: true
+  log_dir: null
+  flush_secs: 30
+```
+
+Then launch:
+
+```bash
+tensorboard --logdir results
+```
+
+TensorBoard complements the YAML and CSV outputs; it does not replace them.

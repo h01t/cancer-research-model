@@ -72,6 +72,11 @@ def base_config():
         "wandb": {
             "enabled": False,
         },
+        "tensorboard": {
+            "enabled": False,
+            "log_dir": None,
+            "flush_secs": 30,
+        },
     }
 
 

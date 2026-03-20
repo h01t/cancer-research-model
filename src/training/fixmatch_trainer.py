@@ -623,7 +623,7 @@ class FixMatchTrainer(BaseTrainer):
             )
 
             # W&B logging
-            self._log_wandb(
+            self._log_metrics(
                 {
                     "train/loss": train_loss,
                     "train/sup_loss": train_metrics["sup_loss"],
@@ -631,6 +631,9 @@ class FixMatchTrainer(BaseTrainer):
                     "train/accuracy": train_metrics["accuracy"],
                     "train/auc": train_metrics.get("auc", 0.0),
                     "train/mask_ratio": train_metrics["mask_ratio"],
+                    "train/lambda_u": self.current_lambda_u,
+                    "train/confidence_threshold": self.current_confidence_threshold,
+                    "train/backbone_unfrozen": float(self.backbone_unfrozen),
                     "val/loss": val_loss,
                     "val/accuracy": val_metrics["accuracy"],
                     "val/auc": val_metrics.get("auc", 0.0),
@@ -654,9 +657,3 @@ class FixMatchTrainer(BaseTrainer):
                 if self.epochs_without_improvement >= self.early_stopping_patience:
                     print(f"  Early stopping triggered after {epoch + 1} epochs")
                     break
-
-        # Finish W&B run
-        if self.use_wandb and self.wandb_run is not None:
-            import wandb
-
-            wandb.finish()
