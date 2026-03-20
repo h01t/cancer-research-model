@@ -1,0 +1,61 @@
+augmentation:
+  mild_strong:
+    brightness: 0.08
+    contrast: 0.12
+    random_horizontal_flip: true
+    random_rotation: 8.0
+    translate:
+    - 0.05
+    - 0.05
+  weak:
+    color_jitter: 0.0
+    random_horizontal_flip: true
+    random_rotation: 5
+    random_vertical_flip: false
+dataset:
+  abnormality_type: mass
+  data_dir: data
+  image_size: 512
+  labeled_subset_size: 500
+experiment:
+  method: mean_teacher
+  seed: 42
+logging:
+  log_freq: 10
+  save_freq: 10
+model:
+  dropout_rate: 0.2
+  freeze_backbone: true
+  freeze_backbone_epochs: 5
+  name: efficientnet-b0
+  num_classes: 2
+  pretrained: true
+ssl:
+  consistency_loss: mse
+  consistency_weight_end: 1.0
+  consistency_weight_ramp_epochs: 20
+  consistency_weight_start: 0.0
+  ema_decay: 0.999
+  method: mean_teacher
+  student_augmentation: mild_strong
+  teacher_augmentation: weak
+  unlabeled_batch_ratio: 2
+training:
+  batch_size: 8
+  class_weighted_loss: true
+  early_stopping_patience: 25
+  gradient_clipping: true
+  learning_rate: 0.001
+  max_grad_norm: 1.0
+  momentum: 0.9
+  num_epochs: 150
+  num_workers: 20
+  optimizer: adam
+  scheduler: cosine
+  use_amp: true
+  warmup_epochs: 5
+  weight_decay: 0.0001
+wandb:
+  enabled: false
+  project: ssl-mammography
+  run_name: null

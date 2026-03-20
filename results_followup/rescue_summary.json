@@ -1,0 +1,79 @@
+{
+  "output_dir": "results_rescue",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "subsets": [
+    {
+      "subset": 100,
+      "methods": [
+        {
+          "method": "supervised",
+          "status": "ok",
+          "completed_seeds": [
+            42,
+            43,
+            44
+          ],
+          "mean_val_auc": 0.6032637291229492,
+          "mean_test_auc": 0.5905348474155813,
+          "mean_sensitivity": 0.44755244755244755,
+          "mean_specificity": 0.6834862385321102
+        },
+        {
+          "method": "fixmatch",
+          "status": "ok",
+          "completed_seeds": [
+            42,
+            43,
+            44
+          ],
+          "mean_val_auc": 0.6559381862690686,
+          "mean_test_auc": 0.5526239815230641,
+          "mean_sensitivity": 0.6783216783216783,
+          "mean_specificity": 0.38837920489296635
+        }
+      ]
+    },
+    {
+      "subset": 250,
+      "methods": [
+        {
+          "method": "supervised",
+          "status": "ok",
+          "completed_seeds": [
+            42,
+            43,
+            44
+          ],
+          "mean_val_auc": 0.7096588173215735,
+          "mean_test_auc": 0.6882498235709243,
+          "mean_sensitivity": 0.7459207459207459,
+          "mean_specificity": 0.5107033639143731
+        },
+        {
+          "method": "fixmatch",
+          "status": "ok",
+          "completed_seeds": [
+            42,
+            43,
+            44
+          ],
+          "mean_val_auc": 0.6787708723432452,
+          "mean_test_auc": 0.5828628557986356,
+          "mean_sensitivity": 0.5594405594405595,
+          "mean_specificity": 0.5504587155963302
+        }
+      ]
+    }
+  ],
+  "promotion_gate": {
+    "ready": true,
+    "delta_100": 0.0526744571461194,
+    "delta_250": -0.030887944978328363,
+    "decision": "pivot_to_mean_teacher",
+    "decision_label": "PIVOT TO MEAN TEACHER"
+  }
+}
