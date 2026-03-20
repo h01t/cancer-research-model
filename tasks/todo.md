@@ -50,16 +50,20 @@
 
 ## Next Steps
 
-- [ ] Phase 2: Code quality (DRY refactor, extract shared utilities, remove dead code)
-- [ ] Phase 3: Test coverage gaps (dataset.py, distribution alignment, grad accumulation)
-- [ ] Phase 4: Housekeeping (.gitignore, stale files, optional deps, config docs)
+- [x] Shared experiment runtime + dataset builder refactor
+- [x] Thin training entrypoints for supervised, FixMatch, and Mean Teacher
+- [x] Add Mean Teacher training path
+- [x] Move ad hoc debug utilities out of the main `scripts/` surface
+- [ ] Expand dataset.py coverage beyond split-only behavior
+- [ ] Add tests for grad accumulation and distribution alignment edge cases
+- [ ] Tighten config/docs consistency after rescue results land
 - [ ] Re-run ablation study with patient-aware splits on CUDA workstation
 - [ ] Update notebooks to work with refactored code
-- [ ] Update USER_GUIDE.md with actual results and v0.3 changes
+- [ ] Update USER_GUIDE.md with actual rescue and Mean Teacher results
 
 ## Future Enhancements
 
-- [ ] Add more SSL algorithms (MixMatch, MeanTeacher)
+- [ ] Add more SSL algorithms (MixMatch, VAT, pseudo-label calibration variants)
 - [ ] Support multi-class classification (calcification vs mass)
 - [ ] Medical-specific augmentations (CLAHE, contrast normalization)
 - [ ] Model export pipeline (ONNX, TorchScript)

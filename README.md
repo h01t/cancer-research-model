@@ -6,24 +6,25 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 
 - **Dataset**: CBIS-DDSM -- mammography images with benign/malignant labels
 - **Task**: Binary classification (benign vs malignant) using full mammograms at 512px
-- **SSL Method**: FixMatch with confidence-thresholded pseudo-labeling + EMA teacher
+- **SSL Methods**: Supervised baseline, FixMatch rescue path, and Mean Teacher
 - **Model**: EfficientNet-B0 (torchvision, ImageNet pretrained)
 - **Evaluation**: AUC-ROC primary metric, with accuracy, F1, sensitivity, specificity
 - **Platform**: Develops on Apple Silicon (MPS), trains on CUDA workstation
 
 ## Key Features
 
-- FixMatch semi-supervised learning with EMA teacher model
+- FixMatch and Mean Teacher semi-supervised training paths
 - Conservative paper-aligned SSL config (tau=0.95, lambda_u=1.0)
 - Mixed precision training (AMP) for CUDA and MPS
 - LR warmup, gradient clipping, class-weighted loss, backbone freeze/unfreeze
 - Config-driven augmentation and training pipeline
 - Ablation study across labeled data sizes (100, 250, 500, full)
+- Shared experiment runtime and dataset-builder layer for fast method iteration
 - Patient-aware train/val splits (no data leakage between patients)
 - Complete SSL state checkpoints (EMA, ramp schedules, early stopping)
 - Per-experiment result isolation with training history CSV
 - W&B integration for experiment tracking (optional)
-- 52 unit tests with synthetic data (no real dataset required)
+- 57+ unit tests with synthetic data (no real dataset required)
 
 ## Project Structure
 
@@ -34,21 +35,28 @@ Semi-supervised learning (FixMatch) on the CBIS-DDSM mammography dataset to impr
 │   │   ├── dataset.py        # CBIS-DDSM dataset loader + patient-aware splitting
 │   │   ├── ssl_dataset.py    # SSL dataset wrappers (FixMatch)
 │   │   └── transforms.py     # Augmentation pipeline (weak, strong, test)
+│   ├── experiments/
+│   │   ├── builders.py       # Shared dataset/dataloader assembly
+│   │   └── runtime.py        # Shared config, eval, and result persistence
 │   ├── models/
 │   │   └── efficientnet.py   # EfficientNet-B0 classifier
 │   └── training/
 │       ├── trainer.py        # Base trainer (AMP, warmup, grad clip, checkpoints)
 │       ├── fixmatch_trainer.py  # FixMatch SSL trainer
+│       ├── mean_teacher_trainer.py  # Mean Teacher SSL trainer
 │       ├── ema.py            # Exponential Moving Average model
 │       └── metrics.py        # Classification metrics
 ├── scripts/                  # Training scripts
 │   ├── train_supervised.py   # Supervised baseline
 │   └── train_fixmatch.py     # FixMatch SSL training
+│   └── train_mean_teacher.py # Mean Teacher SSL training
+├── tools/debug/              # Ad hoc debug utilities (not part of the public workflow)
 ├── configs/                  # YAML configuration files
 │   ├── default.yaml          # Supervised baseline config (512px, batch 8)
 │   ├── fixmatch.yaml         # FixMatch config (paper-aligned, matches supervised base)
+│   ├── mean_teacher.yaml     # Mean Teacher SSL config
 │   └── test.yaml             # Quick validation config (224px, 2 epochs)
-├── tests/                    # Unit tests (52 tests, synthetic data)
+├── tests/                    # Unit tests (synthetic data; no dataset required)
 ├── tasks/                    # Project TODO and lessons learned
 ├── run_ablation.sh           # Full ablation study script (7 experiments)
 ├── pyproject.toml            # Python packaging and tool config
@@ -103,6 +111,15 @@ python scripts/train_fixmatch.py \
     --config configs/fixmatch.yaml \
     --labeled 100 \
     --output_dir results/fixmatch_100
+
+# Mean Teacher SSL (100 labeled samples)
+python scripts/train_mean_teacher.py \
+    --config configs/mean_teacher.yaml \
+    --labeled 100 \
+    --output_dir results/mean_teacher_100
+
+# Targeted rescue sweep (100/250 labels x 3 seeds)
+./run_fixmatch_rescue.sh
 
 # Full ablation study (7 experiments: supervised + FixMatch at 100/250/500/full)
 ./run_ablation.sh

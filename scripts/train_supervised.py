@@ -12,118 +12,22 @@ import logging
 import sys
 from pathlib import Path
 
-import pandas as pd
-import torch
-import yaml
-from torch.utils.data import DataLoader, Subset
-
-# Add project root to path (removed when pyproject.toml is set up in Phase 3)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data.dataset import CBISDDSMDataset, patient_aware_split
-from src.data.sampling import sample_balanced_labeled_indices
-from src.data.ssl_dataset import TransformSubset
-from src.data.transforms import get_transforms
-from src.models.efficientnet import EfficientNetClassifier
-from src.training.trainer import BaseTrainer, get_device
-from src.training.utils import set_seed
+from src.experiments import (
+    build_experiment_context,
+    build_supervised_experiment,
+    compute_class_weights,
+    create_model,
+    create_trainer,
+    evaluate_and_persist_results,
+)
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def load_config(config_path: str) -> dict:
-    """Load configuration from YAML file."""
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
-
-
-def compute_class_weights(dataset: CBISDDSMDataset) -> torch.Tensor:
-    """Compute inverse-frequency class weights for balanced training."""
-    counts = dataset.get_class_counts()
-    total = counts["benign"] + counts["malignant"]
-    # Inverse frequency, normalized
-    w_benign = total / (2.0 * max(counts["benign"], 1))
-    w_malignant = total / (2.0 * max(counts["malignant"], 1))
-    weights = torch.tensor([w_benign, w_malignant], dtype=torch.float32)
-    logger.info(f"Class weights: benign={w_benign:.3f}, malignant={w_malignant:.3f}")
-    return weights
-
-
-def create_datasets(config: dict, labeled_subset_size: int | None = None, seed: int = 42):
-    """Create train, validation, and test datasets.
-
-    When labeled_subset_size is None (full data):
-        - 85/15 train/val split from the full dataset
-
-    When labeled_subset_size is set (ablation):
-        - Hold out 15% from the FULL pool as validation (same split as FixMatch)
-        - Use labeled_subset_size samples from the remaining 85% for training
-        - This keeps val set large and comparable across experiments
-
-    Transforms are applied via wrapper datasets to ensure val gets test transforms.
-    """
-    image_size = config["dataset"]["image_size"]
-    aug_config = config.get("augmentation", {}).get("weak", {})
-
-    train_transform = get_transforms("weak", image_size=image_size, config=aug_config)
-    test_transform = get_transforms("test", image_size=image_size)
-
-    # Always load the full raw dataset (no transform — returns PIL images)
-    raw_dataset = CBISDDSMDataset(
-        split="train",
-        abnormality_type=config["dataset"]["abnormality_type"],
-        labeled_subset_size=None,  # Always load all samples
-        transform=None,  # Raw PIL images
-        data_dir=config["dataset"]["data_dir"],
-    )
-
-    # Patient-aware split: no patient appears in both train and val sets.
-    # Uses the SAME seed and function as train_fixmatch.py for fair comparison.
-    val_fraction = config.get("training", {}).get("val_split_ratio", 0.15)
-    train_pool_indices, val_indices = patient_aware_split(
-        raw_dataset, val_fraction=val_fraction, seed=seed
-    )
-
-    if labeled_subset_size is not None:
-        # Ablation mode: sample labeled_subset_size from the training pool (class-balanced)
-        train_indices = sample_balanced_labeled_indices(
-            train_pool_indices,
-            raw_dataset.labels,
-            labeled_subset_size,
-            seed,
-        )
-    else:
-        # Full data mode: use entire training pool
-        train_indices = train_pool_indices
-
-    # Wrap with appropriate transforms
-    train_subset = TransformSubset(Subset(raw_dataset, train_indices), train_transform)
-    val_subset = TransformSubset(Subset(raw_dataset, val_indices), test_transform)
-
-    # Test dataset (with test transform applied directly)
-    test_dataset = CBISDDSMDataset(
-        split="test",
-        abnormality_type=config["dataset"]["abnormality_type"],
-        labeled_subset_size=None,
-        transform=test_transform,
-        data_dir=config["dataset"]["data_dir"],
-    )
-
-    logger.info(f"Train: {len(train_subset)}, Val: {len(val_subset)}, Test: {len(test_dataset)}")
-    return raw_dataset, train_subset, val_subset, test_dataset
-
-
-def get_num_workers(config: dict) -> int:
-    """Get num_workers from config, respecting platform."""
-    n = config.get("training", {}).get("num_workers", 4)
-    # MPS/CPU on macOS can have issues with multiprocessing
-    if not torch.cuda.is_available():
-        n = min(n, 4)
-    return n
 
 
 def main():
@@ -166,97 +70,56 @@ def main():
     )
     args = parser.parse_args()
 
-    # Load configuration
-    config = load_config(args.config)
-    config.setdefault("experiment", {})["seed"] = args.seed
-    set_seed(args.seed)
-
+    overrides = {"experiment": {"method": "supervised"}}
     if args.labeled_subset is not None:
-        config["dataset"]["labeled_subset_size"] = args.labeled_subset
+        overrides.setdefault("dataset", {})["labeled_subset_size"] = args.labeled_subset
     if args.max_epochs is not None:
-        config["training"]["num_epochs"] = args.max_epochs
+        overrides.setdefault("training", {})["num_epochs"] = args.max_epochs
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save config for reproducibility
-    with open(output_dir / "config.yaml", "w") as f:
-        yaml.dump(config, f, default_flow_style=False)
-
-    # Device
-    device = get_device(args.device)
-    logger.info(f"Using device: {device}")
-
-    # Datasets
-    logger.info("Creating datasets...")
-    raw_dataset, train_dataset, val_dataset, test_dataset = create_datasets(
-        config,
-        labeled_subset_size=config["dataset"].get("labeled_subset_size"),
+    context = build_experiment_context(
+        config_path=args.config,
+        output_dir=args.output_dir,
         seed=args.seed,
+        device_override=args.device,
+        overrides=overrides,
+    )
+    logger.info(f"Using device: {context.device}")
+
+    bundle = build_supervised_experiment(
+        context.config,
+        context.device,
+        seed=context.seed,
+        labeled_subset_size=context.config["dataset"].get("labeled_subset_size"),
+    )
+    logger.info(
+        "Train: %s, Val: %s, Test: %s",
+        len(bundle.datasets.train_dataset),
+        len(bundle.datasets.val_dataset),
+        len(bundle.datasets.test_dataset),
     )
 
-    # Class weights
-    use_class_weights = config["training"].get("class_weighted_loss", True)
-    class_weights = compute_class_weights(raw_dataset) if use_class_weights else None
-
-    # Data loaders
-    num_workers = get_num_workers(config)
-    pin_memory = device.type == "cuda"
-    batch_size = config["training"]["batch_size"]
-
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-    )
-
-    # Model
     logger.info("Creating model...")
-    model = EfficientNetClassifier(
-        num_classes=config["model"]["num_classes"],
-        pretrained=config["model"]["pretrained"],
-        dropout_rate=config["model"]["dropout_rate"],
-        freeze_backbone=config["model"].get("freeze_backbone", False),
+    model = create_model(context.config)
+    use_class_weights = context.config["training"].get("class_weighted_loss", True)
+    class_weights = (
+        compute_class_weights(bundle.datasets.raw_dataset) if use_class_weights else None
     )
-
-    # Trainer
-    trainer = BaseTrainer(
+    trainer = create_trainer(
+        "supervised",
         model,
-        config,
-        device=device,
-        output_dir=output_dir,
-        class_weights=class_weights,
+        context,
+        class_weights,
     )
 
-    # Train
     logger.info("Starting training...")
-    trainer.train(train_loader, val_loader)
-
-    best_checkpoint = output_dir / "best_model.pth"
-    if best_checkpoint.exists():
-        trainer.load_checkpoint(best_checkpoint)
-
-    threshold, val_metrics = trainer.tune_decision_threshold(val_loader)
-
-    # Evaluate on test set
+    trainer.train(bundle.loaders.train_loader, bundle.loaders.val_loader)
     logger.info("Evaluating on test set...")
-    test_metrics = trainer.evaluate(test_loader, decision_threshold=threshold)
+    threshold, val_metrics, test_metrics = evaluate_and_persist_results(
+        trainer,
+        context.output_dir,
+        bundle.loaders.val_loader,
+        bundle.loaders.test_loader,
+    )
     print(f"\nValidation threshold: {threshold:.4f}")
     print("\nValidation metrics:")
     for key, value in val_metrics.items():
@@ -265,16 +128,7 @@ def main():
     for key, value in test_metrics.items():
         print(f"  {key}: {value:.4f}")
 
-    # Save results
-    with open(output_dir / "val_metrics.yaml", "w") as f:
-        yaml.dump({k: float(v) for k, v in val_metrics.items()}, f)
-    with open(output_dir / "test_metrics.yaml", "w") as f:
-        yaml.dump({k: float(v) for k, v in test_metrics.items()}, f)
-
-    history_df = pd.DataFrame(trainer.history)
-    history_df.to_csv(output_dir / "training_history.csv", index=False)
-
-    logger.info(f"Results saved to {output_dir}")
+    logger.info(f"Results saved to {context.output_dir}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 [project]
 name = "ssl-mammography"
-version = "0.2.0"
+version = "0.4.0"
 description = "Semi-supervised learning for breast cancer detection on CBIS-DDSM"
 readme = "README.md"
 license = {text = "MIT"}

@@ -183,7 +183,8 @@ print(f'Shape: {img.shape}, Label: {label}')
 | File | Purpose |
 |------|---------|
 | `configs/default.yaml` | Supervised baseline (512px, batch 8, 100 epochs) |
-| `configs/fixmatch.yaml` | FixMatch SSL -- paper-aligned, identical base params to supervised |
+| `configs/fixmatch.yaml` | FixMatch SSL rescue config with safer augmentation and schedules |
+| `configs/mean_teacher.yaml` | Mean Teacher SSL config |
 | `configs/test.yaml` | Quick validation (224px, 2 epochs, AMP off, no pretrained weights) |
 
 **Design principle**: `default.yaml` and `fixmatch.yaml` share identical base hyperparameters (LR, weight decay, dropout, augmentation, backbone freeze schedule). The only differences in `fixmatch.yaml` are the SSL-specific additions (more epochs/patience, pseudo-labels, EMA). This isolates the SSL effect for clean ablation comparison.
@@ -305,7 +306,14 @@ python scripts/train_supervised.py \
 python scripts/train_fixmatch.py \
   --config configs/fixmatch.yaml \
   --labeled 100 \
+  --seed 42 \
   --output_dir results/fixmatch_100
+
+python scripts/train_mean_teacher.py \
+  --config configs/mean_teacher.yaml \
+  --labeled 100 \
+  --seed 42 \
+  --output_dir results/mean_teacher_100
 ```
 
 ### 6.4 Full Ablation Study
@@ -700,9 +708,15 @@ rsync -avz user@workstation:~/ssl/results/ ./results/
 | `configs/test.yaml` | Quick validation config |
 | `scripts/train_supervised.py` | Supervised baseline training |
 | `scripts/train_fixmatch.py` | FixMatch SSL training |
+| `scripts/train_mean_teacher.py` | Mean Teacher SSL training |
+| `scripts/summarize_rescue.py` | Rescue sweep summary + promotion gate |
 | `run_ablation.sh` | Full ablation study (7 experiments) |
+| `run_fixmatch_rescue.sh` | Targeted rescue sweep (100/250 labels x 3 seeds) |
 | `src/training/trainer.py` | Base trainer (AMP, warmup, etc.) |
 | `src/training/fixmatch_trainer.py` | FixMatch implementation |
+| `src/training/mean_teacher_trainer.py` | Mean Teacher implementation |
+| `src/experiments/builders.py` | Shared dataset/dataloader builders |
+| `src/experiments/runtime.py` | Shared runtime + result persistence |
 | `src/training/ema.py` | EMA model utility |
 | `src/data/dataset.py` | CBIS-DDSM dataset loader + patient-aware split |
 | `src/data/ssl_dataset.py` | SSL dataset wrappers |
@@ -710,3 +724,15 @@ rsync -avz user@workstation:~/ssl/results/ ./results/
 | `src/models/efficientnet.py` | EfficientNet-B0 classifier |
 | `tasks/todo.md` | Project TODO and version history |
 | `tasks/lessons.md` | Patterns and anti-patterns discovered |
+### 6.3.1 Targeted FixMatch Rescue Sweep
+
+```bash
+./run_fixmatch_rescue.sh -o results_rescue
+python scripts/summarize_rescue.py --output_dir results_rescue
+```
+
+This sweep runs only the `100` and `250` label budgets across seeds `42`, `43`, and `44`, then applies the validation-AUC promotion gate automatically.
+
+### 6.3.2 Mean Teacher SSL
+
+Mean Teacher uses an EMA teacher with soft consistency loss instead of confidence-thresholded pseudo-labels. It shares the same patient-aware split and evaluation flow as FixMatch, including validation-threshold tuning before test evaluation.

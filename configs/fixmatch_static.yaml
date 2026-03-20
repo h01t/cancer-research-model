@@ -1,50 +1,51 @@
-# Quick validation configuration (fast, no GPU needed)
-# Use for: pipeline testing, CI, environment validation
+# FixMatch probe configuration with rescue augmentation but static SSL schedules.
 
 dataset:
   data_dir: "data"
   abnormality_type: "mass"
-  image_size: 224  # smaller for speed
-  labeled_subset_size: 10
+  image_size: 512
+  labeled_subset_size: null
 
 model:
   name: "efficientnet-b0"
   num_classes: 2
-  pretrained: false  # skip download for quick tests
+  pretrained: true
   dropout_rate: 0.2
-  freeze_backbone: false
+  freeze_backbone: true
+  freeze_backbone_epochs: 5
 
 training:
-  batch_size: 4
-  num_epochs: 2
+  batch_size: 8
+  num_epochs: 150
   learning_rate: 0.001
   weight_decay: 0.0001
   momentum: 0.9
   optimizer: "adam"
   scheduler: "cosine"
-  warmup_epochs: 0
-  early_stopping_patience: 5
-  num_workers: 0  # no multiprocessing for tests
-  use_amp: false  # disable for CPU compatibility
+  warmup_epochs: 5
+  early_stopping_patience: 25
+  num_workers: 20
+  use_amp: true
   gradient_clipping: true
   max_grad_norm: 1.0
-  class_weighted_loss: false
+  class_weighted_loss: true
 
 ssl:
   method: "fixmatch"
   confidence_threshold: 0.95
-  confidence_threshold_start: 0.7
+  confidence_threshold_start: 0.95
   confidence_threshold_end: 0.95
-  confidence_threshold_ramp_epochs: 2
+  confidence_threshold_ramp_epochs: 0
   lambda_u: 1.0
-  lambda_u_start: 0.0
+  lambda_u_start: 1.0
   lambda_u_end: 1.0
-  lambda_u_ramp_epochs: 2
-  unlabeled_batch_ratio: 2  # smaller for testing
+  lambda_u_ramp_epochs: 0
+  unlabeled_batch_ratio: 2
   randaugment_n: 2
   randaugment_m: 10
-  use_ema: false  # disable for speed
+  use_ema: true
   ema_decay: 0.999
+  distribution_alignment: false
 
 augmentation:
   weak:
@@ -60,8 +61,8 @@ augmentation:
     contrast: 0.12
 
 logging:
-  save_freq: 1
-  log_freq: 1
+  save_freq: 10
+  log_freq: 10
 
 wandb:
   enabled: false
