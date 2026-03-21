@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
 import sys
 
 import pandas as pd
@@ -29,6 +30,13 @@ from src.training.metrics import (
     threshold_for_target_sensitivity,
     threshold_table,
 )
+
+
+SEED_SUFFIX_PATTERN = re.compile(r"_seed\d+$")
+
+
+def derive_config_name(run_name: str) -> str:
+    return SEED_SUFFIX_PATTERN.sub("", run_name)
 
 
 def summarize_frame(
@@ -191,6 +199,8 @@ def main() -> None:
     test_metrics["split"] = "test"
     summary = {
         "run_dir": str(run_dir),
+        "run_name": run_dir.name,
+        "config_name": derive_config_name(run_dir.name),
         "checkpoint": str(checkpoint_path),
         "backbone": context.config["model"]["name"],
         "image_size": int(context.config["dataset"]["image_size"]),

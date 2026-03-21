@@ -1,26 +1,50 @@
 Supervised Sweep Summary
 ========================
 
-run_name                       backbone        size  opt     ls     seed  val_auc  test_auc  sens     spec
------------------------------  --------------  ----  ------  -----  ----  -------  --------  -------  -------
-default_nofreeze_res1024_seed42 efficientnet-b0 1024  adam     0.00    42   0.6689    0.5980   0.3287   0.7798
-default_nofreeze_res1024_seed43 efficientnet-b0 1024  adam     0.00    43   0.6866    0.5923   0.4336   0.6927
-default_nofreeze_res1024_seed44 efficientnet-b0 1024  adam     0.00    44   0.7106    0.6306   0.4825   0.6927
-default_nofreeze_res512_seed42 efficientnet-b0  512  adam     0.00    42   0.8743    0.7944   0.7972   0.6606
-default_nofreeze_res512_seed43 efficientnet-b0  512  adam     0.00    43   0.8448    0.7175   0.6503   0.6284
-default_nofreeze_res512_seed44 efficientnet-b0  512  adam     0.00    44   0.8535    0.7436   0.6993   0.6514
-default_nofreeze_res768_seed42 efficientnet-b0  768  adam     0.00    42   0.6986    0.6547   0.6294   0.6055
-default_nofreeze_res768_seed43 efficientnet-b0  768  adam     0.00    43   0.7508    0.6427   0.5035   0.7248
-default_nofreeze_res768_seed44 efficientnet-b0  768  adam     0.00    44   0.7894    0.7419   0.8252   0.4862
+run_name                       config                        backbone        size  opt     ls     seed  val_auc  test_auc  sens     spec
+-----------------------------  ----------------------------  --------------  ----  ------  -----  ----  -------  --------  -------  -------
+default_nofreeze_aug_safe_seed42 default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00    42   0.8341    0.7588   0.6993   0.6743
+default_nofreeze_aug_safe_seed43 default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00    43   0.8369    0.7206   0.5664   0.7156
+default_nofreeze_aug_safe_seed44 default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00    44   0.8460    0.7871   0.6783   0.7385
+default_nofreeze_b2_seed42    default_nofreeze_b2          efficientnet-b2  512  adam     0.00    42   0.8300    0.7509   0.7622   0.6147
+default_nofreeze_b2_seed43    default_nofreeze_b2          efficientnet-b2  512  adam     0.00    43   0.8411    0.7258   0.6783   0.6101
+default_nofreeze_b2_seed44    default_nofreeze_b2          efficientnet-b2  512  adam     0.00    44   0.7691    0.6783   0.7133   0.5963
+default_nofreeze_b3_seed42    default_nofreeze_b3          efficientnet-b3  512  adam     0.00    42   0.7125    0.5804   0.4825   0.6009
+default_nofreeze_b3_seed43    default_nofreeze_b3          efficientnet-b3  512  adam     0.00    43   0.8500    0.6834   0.7622   0.4679
+default_nofreeze_b3_seed44    default_nofreeze_b3          efficientnet-b3  512  adam     0.00    44   0.7917    0.7092   0.7762   0.5596
+default_nofreeze_ls_seed42    default_nofreeze_ls          efficientnet-b0  512  adam     0.10    42   0.8988    0.7744   0.6993   0.7018
+default_nofreeze_ls_seed43    default_nofreeze_ls          efficientnet-b0  512  adam     0.10    43   0.8780    0.7200   0.5944   0.6835
+default_nofreeze_ls_seed44    default_nofreeze_ls          efficientnet-b0  512  adam     0.10    44   0.8623    0.7442   0.6713   0.6697
+default_nofreeze_res1024_seed42 default_nofreeze_res1024     efficientnet-b0 1024  adam     0.00    42   0.6689    0.5980   0.3287   0.7798
+default_nofreeze_res1024_seed43 default_nofreeze_res1024     efficientnet-b0 1024  adam     0.00    43   0.6866    0.5923   0.4336   0.6927
+default_nofreeze_res1024_seed44 default_nofreeze_res1024     efficientnet-b0 1024  adam     0.00    44   0.7106    0.6306   0.4825   0.6927
+default_nofreeze_res512_seed42 default_nofreeze_res512      efficientnet-b0  512  adam     0.00    42   0.8743    0.7944   0.7972   0.6606
+default_nofreeze_res512_seed43 default_nofreeze_res512      efficientnet-b0  512  adam     0.00    43   0.8448    0.7175   0.6503   0.6284
+default_nofreeze_res512_seed44 default_nofreeze_res512      efficientnet-b0  512  adam     0.00    44   0.8535    0.7436   0.6993   0.6514
+default_nofreeze_res768_seed42 default_nofreeze_res768      efficientnet-b0  768  adam     0.00    42   0.6986    0.6547   0.6294   0.6055
+default_nofreeze_res768_seed43 default_nofreeze_res768      efficientnet-b0  768  adam     0.00    43   0.7508    0.6427   0.5035   0.7248
+default_nofreeze_res768_seed44 default_nofreeze_res768      efficientnet-b0  768  adam     0.00    44   0.7894    0.7419   0.8252   0.4862
 
 Grouped Means
 -------------
-backbone        size  opt     ls     labeled  runs  mean_val_auc  mean_test_auc  mean_sens  mean_spec
---------------  ----  ------  -----  -------  ----  ------------  -------------  ---------  ---------
-efficientnet-b0  512  adam     0.00      500     3        0.8575         0.7518     0.7156     0.6468
-efficientnet-b0  768  adam     0.00      500     3        0.7463         0.6798     0.6527     0.6055
-efficientnet-b0 1024  adam     0.00      500     3        0.6887         0.6070     0.4149     0.7217
+config                        backbone        size  opt     ls     labeled  runs  mean_val_auc  mean_test_auc  mean_sens  mean_spec
+----------------------------  --------------  ----  ------  -----  -------  ----  ------------  -------------  ---------  ---------
+default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00      500     3        0.8390         0.7555     0.6480     0.7095
+default_nofreeze_b2          efficientnet-b2  512  adam     0.00      500     3        0.8134         0.7183     0.7179     0.6070
+default_nofreeze_b3          efficientnet-b3  512  adam     0.00      500     3        0.7847         0.6577     0.6737     0.5428
+default_nofreeze_ls          efficientnet-b0  512  adam     0.10      500     3        0.8797         0.7462     0.6550     0.6850
+default_nofreeze_res1024     efficientnet-b0 1024  adam     0.00      500     3        0.6887         0.6070     0.4149     0.7217
+default_nofreeze_res512      efficientnet-b0  512  adam     0.00      500     3        0.8575         0.7518     0.7156     0.6468
+default_nofreeze_res768      efficientnet-b0  768  adam     0.00      500     3        0.7463         0.6798     0.6527     0.6055
+
+Candidate Comparison
+--------------------
+config                        mean_val_auc  mean_test_auc  mean_sens  mean_spec  opt     ls
+----------------------------  ------------  -------------  ---------  ---------  ------  -----
+default_nofreeze_res512            0.8575         0.7518     0.7156     0.6468  adam     0.00
+default_nofreeze_aug_safe          0.8390         0.7555     0.6480     0.7095  adam     0.00
+default_nofreeze_ls                0.8797         0.7462     0.6550     0.6850  adam     0.10
 
 Recommendation
 --------------
-Best grouped candidate so far: efficientnet-b0 at 512px with adam (label_smoothing=0.00), mean val AUC 0.8575.
+Best grouped candidate so far: default_nofreeze_ls with efficientnet-b0 at 512px, adam, label_smoothing=0.10, mean val AUC 0.8797.
