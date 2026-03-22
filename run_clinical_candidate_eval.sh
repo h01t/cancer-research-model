@@ -3,15 +3,16 @@
 
 set -u
 
-RESULTS_DIR="results_supervised_sweep"
-OUTPUT_DIR="results_supervised_sweep/clinical_candidates"
+RESULTS_DIR="results_supervised_candidates"
+OUTPUT_DIR="results_supervised_candidates/clinical_candidates"
 BOOTSTRAP_SAMPLES="200"
 DEVICE=""
+SKIP_COMPLETED=1
+CUSTOM_CONFIGS=0
 CONFIGS=(
   "default_nofreeze_res512"
   "default_nofreeze_aug_safe"
   "default_nofreeze_ls"
-  "default_nofreeze_aug_safe_ls"
 )
 SEEDS=(42 43 44)
 
@@ -21,11 +22,15 @@ Usage: ./run_clinical_candidate_eval.sh [options]
 
 Options:
   --results_dir DIR        Directory containing supervised run folders
-                           (default: results_supervised_sweep)
+                           (default: results_supervised_candidates)
   -o, --output DIR         Output directory for clinical bundles
-                           (default: results_supervised_sweep/clinical_candidates)
+                           (default: results_supervised_candidates/clinical_candidates)
   --bootstrap_samples N    Number of bootstrap samples for clinical_eval.py
   --device DEVICE          Optional device override
+  --config NAME            Restrict evaluation to a specific config name
+                           (repeatable; defaults to the promoted top 3 candidates)
+  --skip_completed         Skip runs with clinical_summary.yaml already present (default)
+  --no-skip_completed      Re-run completed clinical bundles
   -h, --help               Show this help
 EOF
 }
@@ -47,6 +52,22 @@ while [[ $# -gt 0 ]]; do
     --device)
       DEVICE="$2"
       shift 2
+      ;;
+    --config)
+      if [[ "$CUSTOM_CONFIGS" -eq 0 ]]; then
+        CONFIGS=()
+        CUSTOM_CONFIGS=1
+      fi
+      CONFIGS+=("$2")
+      shift 2
+      ;;
+    --skip_completed)
+      SKIP_COMPLETED=1
+      shift
+      ;;
+    --no-skip_completed)
+      SKIP_COMPLETED=0
+      shift
       ;;
     -h|--help)
       usage
@@ -75,6 +96,11 @@ for config_name in "${CONFIGS[@]}"; do
     fi
 
     echo "[run] $run_name" | tee -a "$LOG_FILE"
+    if [[ "$SKIP_COMPLETED" -eq 1 && -f "$out_dir/clinical_summary.yaml" ]]; then
+      echo "[skip] $run_name" | tee -a "$LOG_FILE"
+      continue
+    fi
+
     cmd=(
       python3 scripts/clinical_eval.py
       --run_dir "$run_dir"

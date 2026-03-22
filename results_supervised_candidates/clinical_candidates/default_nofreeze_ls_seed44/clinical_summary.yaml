@@ -1,0 +1,112 @@
+run_dir: results_supervised_candidates/default_nofreeze_ls_seed44
+run_name: default_nofreeze_ls_seed44
+config_name: default_nofreeze_ls
+checkpoint: results_supervised_candidates/default_nofreeze_ls_seed44/best_model.pth
+backbone: efficientnet-b0
+image_size: 512
+optimizer: adam
+label_smoothing: 0.1
+seed: 44
+decision_threshold: 0.45
+val_metrics:
+  accuracy: 0.786096256684492
+  precision: 0.7802197802197802
+  recall: 0.7802197802197802
+  f1: 0.7802197802197802
+  auc: 0.861492673992674
+  pr_auc: 0.8536991567690652
+  tn: 76.0
+  fp: 20.0
+  fn: 20.0
+  tp: 71.0
+  sensitivity: 0.7802197802197802
+  specificity: 0.7916666666666666
+  brier_score: 0.15187314159619367
+  ece: 0.056634711973209746
+  decision_threshold: 0.45
+  auc_ci_low: 0.8108159985352106
+  auc_ci_high: 0.9049436973091238
+  pr_auc_ci_low: 0.7972232388786712
+  pr_auc_ci_high: 0.9109855079204989
+  sensitivity_ci_low: 0.6999019607843137
+  sensitivity_ci_high: 0.8518623737373737
+  specificity_ci_low: 0.7142857142857143
+  specificity_ci_high: 0.8627554179566564
+  split: val
+test_metrics:
+  accuracy: 0.6731301939058172
+  precision: 0.5739644970414202
+  recall: 0.6783216783216783
+  f1: 0.6217948717948718
+  auc: 0.7437929043433629
+  pr_auc: 0.6788535429906446
+  tn: 146.0
+  fp: 72.0
+  fn: 46.0
+  tp: 97.0
+  sensitivity: 0.6783216783216783
+  specificity: 0.6697247706422018
+  brier_score: 0.2172557239647295
+  ece: 0.12321921405472747
+  decision_threshold: 0.45
+  auc_ci_low: 0.6940632663242343
+  auc_ci_high: 0.7868238832506668
+  pr_auc_ci_low: 0.5929191632042924
+  pr_auc_ci_high: 0.7460406467623608
+  sensitivity_ci_low: 0.5951785714285714
+  sensitivity_ci_high: 0.754973834112907
+  specificity_ci_low: 0.6078297072253559
+  specificity_ci_high: 0.7325055596738325
+  split: test
+grouped_metrics:
+- accuracy: 0.6467661691542289
+  precision: 0.5537190082644629
+  recall: 0.7976190476190477
+  f1: 0.6536585365853659
+  auc: 0.7531542531542531
+  pr_auc: 0.7206302049016496
+  tn: 63.0
+  fp: 54.0
+  fn: 17.0
+  tp: 67.0
+  sensitivity: 0.7976190476190477
+  specificity: 0.5384615384615384
+  brier_score: 0.23628528394319542
+  ece: 0.17308923357458258
+  group_name: patient_id
+  decision_threshold: 0.45
+- accuracy: 0.6476190476190476
+  precision: 0.5409836065573771
+  recall: 0.7857142857142857
+  f1: 0.6407766990291263
+  auc: 0.7635109599395314
+  pr_auc: 0.7177623207522766
+  tn: 70.0
+  fp: 56.0
+  fn: 18.0
+  tp: 66.0
+  sensitivity: 0.7857142857142857
+  specificity: 0.5555555555555556
+  brier_score: 0.23012825961206093
+  ece: 0.17404555685463408
+  group_name: exam_id
+  decision_threshold: 0.45
+fixed_sensitivity:
+- target_sensitivity: 0.85
+  threshold: 0.34750000000000003
+  test_specificity: 0.555045871559633
+  test_sensitivity: 0.7622377622377622
+  test_auc: 0.7437929043433629
+  test_pr_auc: 0.6788535429906446
+- target_sensitivity: 0.9
+  threshold: 0.31
+  test_specificity: 0.4954128440366973
+  test_sensitivity: 0.7972027972027972
+  test_auc: 0.7437929043433629
+  test_pr_auc: 0.6788535429906446
+- target_sensitivity: 0.95
+  threshold: 0.23
+  test_specificity: 0.40825688073394495
+  test_sensitivity: 0.8881118881118881
+  test_auc: 0.7437929043433629
+  test_pr_auc: 0.6788535429906446

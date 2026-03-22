@@ -1,0 +1,39 @@
+Supervised Sweep Summary
+========================
+
+run_name                       config                        backbone        size  opt     ls     seed  val_auc  test_auc  sens     spec
+-----------------------------  ----------------------------  --------------  ----  ------  -----  ----  -------  --------  -------  -------
+default_nofreeze_aug_safe_ls_seed42 default_nofreeze_aug_safe_ls efficientnet-b0  512  adam     0.10    42   0.8738    0.7556   0.6853   0.6743
+default_nofreeze_aug_safe_ls_seed43 default_nofreeze_aug_safe_ls efficientnet-b0  512  adam     0.10    43   0.8471    0.6704   0.7063   0.5505
+default_nofreeze_aug_safe_ls_seed44 default_nofreeze_aug_safe_ls efficientnet-b0  512  adam     0.10    44   0.8302    0.7590   0.5385   0.8257
+default_nofreeze_aug_safe_seed42 default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00    42   0.8341    0.7588   0.6993   0.6743
+default_nofreeze_aug_safe_seed43 default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00    43   0.8369    0.7206   0.5664   0.7156
+default_nofreeze_aug_safe_seed44 default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00    44   0.8460    0.7871   0.6783   0.7385
+default_nofreeze_ls_seed42    default_nofreeze_ls          efficientnet-b0  512  adam     0.10    42   0.8988    0.7744   0.6993   0.7018
+default_nofreeze_ls_seed43    default_nofreeze_ls          efficientnet-b0  512  adam     0.10    43   0.8780    0.7200   0.5944   0.6835
+default_nofreeze_ls_seed44    default_nofreeze_ls          efficientnet-b0  512  adam     0.10    44   0.8623    0.7442   0.6713   0.6697
+default_nofreeze_res512_seed42 default_nofreeze_res512      efficientnet-b0  512  adam     0.00    42   0.8743    0.7944   0.7972   0.6606
+default_nofreeze_res512_seed43 default_nofreeze_res512      efficientnet-b0  512  adam     0.00    43   0.8448    0.7175   0.6503   0.6284
+default_nofreeze_res512_seed44 default_nofreeze_res512      efficientnet-b0  512  adam     0.00    44   0.8535    0.7436   0.6993   0.6514
+
+Grouped Means
+-------------
+config                        backbone        size  opt     ls     labeled  runs  mean_val_auc  mean_test_auc  mean_sens  mean_spec
+----------------------------  --------------  ----  ------  -----  -------  ----  ------------  -------------  ---------  ---------
+default_nofreeze_aug_safe    efficientnet-b0  512  adam     0.00      500     3        0.8390         0.7555     0.6480     0.7095
+default_nofreeze_aug_safe_ls efficientnet-b0  512  adam     0.10      500     3        0.8503         0.7284     0.6434     0.6835
+default_nofreeze_ls          efficientnet-b0  512  adam     0.10      500     3        0.8797         0.7462     0.6550     0.6850
+default_nofreeze_res512      efficientnet-b0  512  adam     0.00      500     3        0.8575         0.7518     0.7156     0.6468
+
+Candidate Comparison
+--------------------
+config                        mean_val_auc  mean_test_auc  mean_sens  mean_spec  opt     ls
+----------------------------  ------------  -------------  ---------  ---------  ------  -----
+default_nofreeze_res512            0.8575         0.7518     0.7156     0.6468  adam     0.00
+default_nofreeze_aug_safe          0.8390         0.7555     0.6480     0.7095  adam     0.00
+default_nofreeze_ls                0.8797         0.7462     0.6550     0.6850  adam     0.10
+default_nofreeze_aug_safe_ls       0.8503         0.7284     0.6434     0.6835  adam     0.10
+
+Recommendation
+--------------
+Best grouped candidate so far: default_nofreeze_ls with efficientnet-b0 at 512px, adam, label_smoothing=0.10, mean val AUC 0.8797.

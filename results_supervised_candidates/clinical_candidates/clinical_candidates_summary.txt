@@ -1,0 +1,27 @@
+Clinical Candidate Summary
+==========================
+
+run_name                       config                        val_auc  test_auc  test_pr  brier    ece      sens     spec
+-----------------------------  ----------------------------  -------  --------  -------  -------  -------  -------  -------
+default_nofreeze_aug_safe_seed42 default_nofreeze_aug_safe     0.8347    0.7587   0.6601   0.2699   0.2475   0.6993   0.6835
+default_nofreeze_aug_safe_seed43 default_nofreeze_aug_safe     0.8365    0.7197   0.6254   0.2502   0.1946   0.5524   0.7156
+default_nofreeze_aug_safe_seed44 default_nofreeze_aug_safe     0.8460    0.7874   0.7443   0.2117   0.1796   0.6713   0.7385
+default_nofreeze_ls_seed42    default_nofreeze_ls           0.8992    0.7740   0.6854   0.2003   0.1193   0.6923   0.7018
+default_nofreeze_ls_seed43    default_nofreeze_ls           0.8781    0.7201   0.6463   0.2194   0.1014   0.5944   0.6835
+default_nofreeze_ls_seed44    default_nofreeze_ls           0.8615    0.7438   0.6789   0.2173   0.1232   0.6783   0.6697
+default_nofreeze_res512_seed42 default_nofreeze_res512       0.8744    0.7950   0.7316   0.2433   0.2177   0.7972   0.6560
+default_nofreeze_res512_seed43 default_nofreeze_res512       0.8451    0.7173   0.6659   0.2211   0.1228   0.6643   0.6009
+default_nofreeze_res512_seed44 default_nofreeze_res512       0.8539    0.7431   0.6950   0.1997   0.0645   0.6783   0.6651
+
+Grouped Means
+-------------
+config                        mean_val_auc  mean_test_auc  mean_test_pr  mean_brier  mean_ece  mean_sens  mean_spec  spec@0.90  spec@0.95  mean_exam_auc
+----------------------------  ------------  -------------  ------------  ----------  --------  ---------  ---------  ---------  ---------  -------------
+default_nofreeze_aug_safe          0.8391         0.7553        0.6766      0.2439    0.2072     0.6410     0.7125     0.5260     0.3838         0.7615
+default_nofreeze_ls                0.8796         0.7460        0.6702      0.2123    0.1146     0.6550     0.6850     0.5367     0.4205         0.7618
+default_nofreeze_res512            0.8578         0.7518        0.6975      0.2213    0.1350     0.7133     0.6407     0.5352     0.4404         0.7637
+
+Recommendation
+--------------
+Best clinical candidate by mean validation AUC so far: default_nofreeze_ls (val_auc=0.8796, test_auc=0.7460, test_brier=0.2123, test_ece=0.1146).
+Best balanced candidate by specificity at 0.90 target sensitivity: default_nofreeze_ls (spec@0.90=0.5367, test_spec=0.6850, exam_auc=0.7618).

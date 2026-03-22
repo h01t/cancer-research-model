@@ -38,7 +38,12 @@ def _write_clinical_summary(run_dir: Path, run_name: str, config_name: str, seed
             "specificity": 0.65,
         },
         "grouped_metrics": [
+            {"group_name": "patient_id", "auc": test_auc - 0.01, "pr_auc": 0.67},
             {"group_name": "exam_id", "auc": test_auc - 0.02, "pr_auc": 0.66}
+        ],
+        "fixed_sensitivity": [
+            {"target_sensitivity": 0.9, "test_specificity": 0.61},
+            {"target_sensitivity": 0.95, "test_specificity": 0.55},
         ],
     }
     (run_dir / "clinical_summary.yaml").write_text(yaml.safe_dump(summary))
@@ -81,6 +86,8 @@ def test_summarize_clinical_candidates(tmp_path):
     assert summary_path.exists()
     assert grouped_path.exists()
     assert "Clinical Candidate Summary" in summary_path.read_text()
+    assert "spec@0.90" in summary_path.read_text()
+    assert "Best balanced candidate by specificity at 0.90 target sensitivity" in summary_path.read_text()
 
     with open(grouped_path, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -88,3 +95,6 @@ def test_summarize_clinical_candidates(tmp_path):
         "default_nofreeze_res512",
         "default_nofreeze_aug_safe",
     }
+    for row in rows:
+        assert "mean_patient_auc" in row
+        assert "mean_spec_at_sens_090" in row

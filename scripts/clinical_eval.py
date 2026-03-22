@@ -97,6 +97,29 @@ def write_yaml(path: Path, data: dict) -> None:
         yaml.safe_dump(data, f, sort_keys=False)
 
 
+def build_evaluation_context(
+    config_path: Path,
+    output_dir: Path,
+    seed: int,
+    device_override: str | None,
+):
+    return build_experiment_context(
+        config_path=str(config_path),
+        output_dir=str(output_dir),
+        seed=seed,
+        device_override=device_override,
+        overrides={
+            "experiment": {"method": "supervised"},
+            # Evaluation rebuilds weights from the checkpoint, so it must not
+            # trigger a fresh pretrained-backbone download.
+            "model": {"pretrained": False},
+            # Evaluation jobs should stay portable even in restricted
+            # environments where multiprocessing shared memory is unavailable.
+            "training": {"num_workers": 0},
+        },
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build a clinical-style evaluation bundle")
     parser.add_argument("--run_dir", type=str, required=True, help="Run directory with config + checkpoint")
@@ -117,12 +140,11 @@ def main() -> None:
         saved_config = yaml.safe_load(f)
     seed = saved_config.get("experiment", {}).get("seed", 42)
 
-    context = build_experiment_context(
-        config_path=str(config_path),
-        output_dir=str(output_dir),
+    context = build_evaluation_context(
+        config_path=config_path,
+        output_dir=output_dir,
         seed=seed,
         device_override=args.device,
-        overrides={"experiment": {"method": "supervised"}},
     )
 
     bundle = build_supervised_experiment(

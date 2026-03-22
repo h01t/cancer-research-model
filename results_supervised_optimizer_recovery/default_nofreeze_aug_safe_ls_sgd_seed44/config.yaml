@@ -1,0 +1,58 @@
+augmentation:
+  weak:
+    color_jitter: 0.0
+    random_horizontal_flip: true
+    random_rotation: 3
+    random_vertical_flip: false
+dataset:
+  abnormality_type: mass
+  data_dir: data
+  image_size: 512
+  labeled_subset_size: 500
+  name: cbis-ddsm
+experiment:
+  method: supervised
+  seed: 44
+logging:
+  log_freq: 10
+  save_freq: 10
+model:
+  dropout_rate: 0.2
+  freeze_backbone: false
+  freeze_backbone_epochs: 0
+  name: efficientnet-b0
+  num_classes: 2
+  pretrained: true
+ssl:
+  confidence_threshold: 0.95
+  ema_decay: 0.999
+  lambda_u: 1.0
+  method: fixmatch
+  randaugment_m: 10
+  randaugment_n: 2
+  unlabeled_batch_ratio: 2
+  use_ema: true
+tensorboard:
+  enabled: false
+  flush_secs: 30
+  log_dir: null
+training:
+  batch_size: 8
+  class_weighted_loss: true
+  early_stopping_patience: 20
+  gradient_clipping: true
+  label_smoothing: 0.1
+  learning_rate: 0.01
+  max_grad_norm: 1.0
+  momentum: 0.9
+  num_epochs: 100
+  num_workers: 20
+  optimizer: sgd
+  scheduler: cosine
+  use_amp: true
+  warmup_epochs: 5
+  weight_decay: 0.0001
+wandb:
+  enabled: false
+  project: ssl-mammography
+  run_name: null

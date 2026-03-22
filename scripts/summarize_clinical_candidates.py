@@ -32,11 +32,19 @@ def collect_rows(root: Path) -> list[dict]:
         val_metrics = data["val_metrics"]
         test_metrics = data["test_metrics"]
 
+        patient_metrics = {}
         exam_metrics = {}
         for grouped in data.get("grouped_metrics", []):
+            if grouped.get("group_name") == "patient_id":
+                patient_metrics = grouped
             if grouped.get("group_name") == "exam_id":
                 exam_metrics = grouped
-                break
+
+        fixed_sensitivity = {
+            float(row["target_sensitivity"]): row for row in data.get("fixed_sensitivity", [])
+        }
+        fixed_090 = fixed_sensitivity.get(0.9, {})
+        fixed_095 = fixed_sensitivity.get(0.95, {})
 
         rows.append(
             {
@@ -57,8 +65,12 @@ def collect_rows(root: Path) -> list[dict]:
                 "test_ece": float(test_metrics["ece"]),
                 "test_sensitivity": float(test_metrics["sensitivity"]),
                 "test_specificity": float(test_metrics["specificity"]),
+                "patient_auc": float(patient_metrics.get("auc", 0.0)),
+                "patient_pr_auc": float(patient_metrics.get("pr_auc", 0.0)),
                 "exam_auc": float(exam_metrics.get("auc", 0.0)),
                 "exam_pr_auc": float(exam_metrics.get("pr_auc", 0.0)),
+                "spec_at_sens_090": float(fixed_090.get("test_specificity", 0.0)),
+                "spec_at_sens_095": float(fixed_095.get("test_specificity", 0.0)),
             }
         )
     return rows
@@ -89,8 +101,12 @@ def grouped_rows(rows: list[dict]) -> list[dict]:
                 "mean_test_ece": mean([m["test_ece"] for m in members]),
                 "mean_test_sensitivity": mean([m["test_sensitivity"] for m in members]),
                 "mean_test_specificity": mean([m["test_specificity"] for m in members]),
+                "mean_patient_auc": mean([m["patient_auc"] for m in members]),
+                "mean_patient_pr_auc": mean([m["patient_pr_auc"] for m in members]),
                 "mean_exam_auc": mean([m["exam_auc"] for m in members]),
                 "mean_exam_pr_auc": mean([m["exam_pr_auc"] for m in members]),
+                "mean_spec_at_sens_090": mean([m["spec_at_sens_090"] for m in members]),
+                "mean_spec_at_sens_095": mean([m["spec_at_sens_095"] for m in members]),
             }
         )
     return summary
@@ -122,21 +138,30 @@ def format_summary(rows: list[dict], grouped: list[dict]) -> str:
 
     lines.extend(["", "Grouped Means", "-------------"])
     lines.append(
-        "config                        mean_val_auc  mean_test_auc  mean_test_pr  mean_brier  mean_ece  mean_sens  mean_spec  mean_exam_auc"
+        "config                        mean_val_auc  mean_test_auc  mean_test_pr  mean_brier  mean_ece  mean_sens  mean_spec  spec@0.90  spec@0.95  mean_exam_auc"
     )
     lines.append(
-        "----------------------------  ------------  -------------  ------------  ----------  --------  ---------  ---------  -------------"
+        "----------------------------  ------------  -------------  ------------  ----------  --------  ---------  ---------  ---------  ---------  -------------"
     )
     for row in grouped:
         lines.append(
             f"{row['config_name']:<28} {row['mean_val_auc']:>12.4f}  {row['mean_test_auc']:>13.4f}  "
             f"{row['mean_test_pr_auc']:>12.4f}  {row['mean_test_brier_score']:>10.4f}  "
             f"{row['mean_test_ece']:>8.4f}  {row['mean_test_sensitivity']:>9.4f}  "
-            f"{row['mean_test_specificity']:>9.4f}  {row['mean_exam_auc']:>13.4f}"
+            f"{row['mean_test_specificity']:>9.4f}  {row['mean_spec_at_sens_090']:>9.4f}  "
+            f"{row['mean_spec_at_sens_095']:>9.4f}  {row['mean_exam_auc']:>13.4f}"
         )
 
     if grouped:
         best = max(grouped, key=lambda row: row["mean_val_auc"])
+        best_balanced = max(
+            grouped,
+            key=lambda row: (
+                row["mean_spec_at_sens_090"],
+                row["mean_test_specificity"],
+                row["mean_test_auc"],
+            ),
+        )
         lines.extend(
             [
                 "",
@@ -147,6 +172,13 @@ def format_summary(rows: list[dict], grouped: list[dict]) -> str:
                     f"{best['config_name']} "
                     f"(val_auc={best['mean_val_auc']:.4f}, test_auc={best['mean_test_auc']:.4f}, "
                     f"test_brier={best['mean_test_brier_score']:.4f}, test_ece={best['mean_test_ece']:.4f})."
+                ),
+                (
+                    "Best balanced candidate by specificity at 0.90 target sensitivity: "
+                    f"{best_balanced['config_name']} "
+                    f"(spec@0.90={best_balanced['mean_spec_at_sens_090']:.4f}, "
+                    f"test_spec={best_balanced['mean_test_specificity']:.4f}, "
+                    f"exam_auc={best_balanced['mean_exam_auc']:.4f})."
                 ),
             ]
         )
@@ -190,8 +222,12 @@ def main() -> None:
             "test_ece",
             "test_sensitivity",
             "test_specificity",
+            "patient_auc",
+            "patient_pr_auc",
             "exam_auc",
             "exam_pr_auc",
+            "spec_at_sens_090",
+            "spec_at_sens_095",
         ],
     )
     write_csv(
@@ -214,8 +250,12 @@ def main() -> None:
             "mean_test_ece",
             "mean_test_sensitivity",
             "mean_test_specificity",
+            "mean_patient_auc",
+            "mean_patient_pr_auc",
             "mean_exam_auc",
             "mean_exam_pr_auc",
+            "mean_spec_at_sens_090",
+            "mean_spec_at_sens_095",
         ],
     )
     print(summary)
