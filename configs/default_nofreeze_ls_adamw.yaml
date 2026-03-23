@@ -1,0 +1,64 @@
+# Final head-to-head candidate: label smoothing with AdamW.
+
+dataset:
+  name: "cbis-ddsm"
+  data_dir: "data"
+  abnormality_type: "mass"
+  image_size: 512
+  labeled_subset_size: null
+
+model:
+  name: "efficientnet-b0"
+  num_classes: 2
+  pretrained: true
+  dropout_rate: 0.2
+  freeze_backbone: false
+  freeze_backbone_epochs: 0
+
+training:
+  batch_size: 8
+  num_epochs: 100
+  learning_rate: 0.0003
+  weight_decay: 0.0005
+  momentum: 0.9
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_epochs: 5
+  early_stopping_patience: 20
+  num_workers: 20
+  use_amp: true
+  gradient_clipping: true
+  max_grad_norm: 1.0
+  class_weighted_loss: true
+  label_smoothing: 0.1
+
+ssl:
+  method: "fixmatch"
+  confidence_threshold: 0.95
+  lambda_u: 1.0
+  unlabeled_batch_ratio: 2
+  randaugment_n: 2
+  randaugment_m: 10
+  use_ema: true
+  ema_decay: 0.999
+
+augmentation:
+  weak:
+    random_horizontal_flip: true
+    random_vertical_flip: true
+    random_rotation: 5
+    color_jitter: 0.1
+
+logging:
+  save_freq: 10
+  log_freq: 10
+
+wandb:
+  enabled: false
+  project: "ssl-mammography"
+  run_name: null
+
+tensorboard:
+  enabled: false
+  log_dir: null
+  flush_secs: 30

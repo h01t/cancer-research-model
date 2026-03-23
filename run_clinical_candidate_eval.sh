@@ -30,6 +30,7 @@ Options:
   --device DEVICE          Optional device override
   --config NAME            Restrict evaluation to a specific config name
                            (repeatable; defaults to the promoted top 3 candidates)
+  --seeds A,B,C            Comma-separated seed list (default: 42,43,44)
   --dry_run                Show which runs would be evaluated and exit
   --skip_completed         Skip runs with clinical_summary.yaml already present (default)
   --no-skip_completed      Re-run completed clinical bundles
@@ -53,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --device)
       DEVICE="$2"
+      shift 2
+      ;;
+    --seeds)
+      IFS=',' read -r -a SEEDS <<< "$2"
       shift 2
       ;;
     --config)

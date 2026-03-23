@@ -3,8 +3,25 @@ Clinical Candidate Summary
 
 run_name                       config                        val_auc  test_auc  test_pr  brier    ece      sens     spec
 -----------------------------  ----------------------------  -------  --------  -------  -------  -------  -------  -------
+default_nofreeze_ls_adam_seed42 default_nofreeze_ls_adam      0.8988    0.7744   0.6870   0.2001   0.1158   0.6993   0.7018
+default_nofreeze_ls_adam_seed43 default_nofreeze_ls_adam      0.8780    0.7200   0.6462   0.2193   0.1073   0.5944   0.6835
+default_nofreeze_ls_adam_seed44 default_nofreeze_ls_adam      0.8623    0.7442   0.6789   0.2172   0.1232   0.6713   0.6697
+default_nofreeze_ls_adamw_seed42 default_nofreeze_ls_adamw     0.8818    0.7760   0.6764   0.2088   0.1528   0.6434   0.7936
+default_nofreeze_ls_adamw_seed43 default_nofreeze_ls_adamw     0.8702    0.7297   0.6530   0.2072   0.0815   0.6364   0.6743
+default_nofreeze_ls_adamw_seed44 default_nofreeze_ls_adamw     0.8572    0.7671   0.6526   0.2484   0.2021   0.7343   0.6606
+default_nofreeze_ls_sgd_seed42 default_nofreeze_ls_sgd       0.8210    0.7735   0.6907   0.2102   0.1148   0.8531   0.5275
+default_nofreeze_ls_sgd_seed43 default_nofreeze_ls_sgd       0.8260    0.7236   0.6498   0.2054   0.0523   0.6364   0.6972
+default_nofreeze_ls_sgd_seed44 default_nofreeze_ls_sgd       0.8503    0.7799   0.7036   0.2138   0.1723   0.7692   0.6835
 
 Grouped Means
 -------------
 config                        mean_val_auc  mean_test_auc  mean_test_pr  mean_brier  mean_ece  mean_sens  mean_spec  spec@0.90  spec@0.95  mean_exam_auc
 ----------------------------  ------------  -------------  ------------  ----------  --------  ---------  ---------  ---------  ---------  -------------
+default_nofreeze_ls_adam           0.8797         0.7462        0.6707      0.2122    0.1154     0.6550     0.6850     0.5398     0.4159         0.7621
+default_nofreeze_ls_adamw          0.8697         0.7576        0.6607      0.2215    0.1455     0.6713     0.7095     0.5688     0.3869         0.7628
+default_nofreeze_ls_sgd            0.8324         0.7590        0.6814      0.2098    0.1132     0.7529     0.6361     0.5107     0.3532         0.7726
+
+Recommendation
+--------------
+Best clinical candidate by mean validation AUC so far: default_nofreeze_ls_adam (val_auc=0.8797, test_auc=0.7462, test_brier=0.2122, test_ece=0.1154).
+Best balanced candidate by specificity at 0.90 target sensitivity: default_nofreeze_ls_adamw (spec@0.90=0.5688, test_spec=0.7095, exam_auc=0.7628).
