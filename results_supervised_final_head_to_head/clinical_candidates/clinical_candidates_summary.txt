@@ -1,0 +1,23 @@
+Clinical Candidate Summary
+==========================
+
+run_name                       config                        val_auc  test_auc  test_pr  brier    ece      sens     spec
+-----------------------------  ----------------------------  -------  --------  -------  -------  -------  -------  -------
+default_nofreeze_ls_adam_seed45 default_nofreeze_ls_adam      0.8221    0.7024   0.5859   0.2171   0.0730   0.7063   0.5963
+default_nofreeze_ls_adam_seed46 default_nofreeze_ls_adam      0.7411    0.7040   0.6040   0.2335   0.1617   0.4476   0.8257
+default_nofreeze_ls_adam_seed47 default_nofreeze_ls_adam      0.8488    0.7504   0.6605   0.2002   0.0694   0.6503   0.6972
+default_nofreeze_ls_adamw_seed45 default_nofreeze_ls_adamw     0.8502    0.7901   0.7390   0.2159   0.1787   0.8042   0.6239
+default_nofreeze_ls_adamw_seed46 default_nofreeze_ls_adamw     0.8728    0.7518   0.6657   0.2056   0.1163   0.7133   0.6284
+default_nofreeze_ls_adamw_seed47 default_nofreeze_ls_adamw     0.8473    0.7386   0.6618   0.2268   0.1766   0.7343   0.6101
+
+Grouped Means
+-------------
+config                        mean_val_auc  mean_test_auc  mean_test_pr  mean_brier  mean_ece  mean_sens  mean_spec  spec@0.90  spec@0.95  mean_exam_auc
+----------------------------  ------------  -------------  ------------  ----------  --------  ---------  ---------  ---------  ---------  -------------
+default_nofreeze_ls_adam           0.8040         0.7189        0.6168      0.2169    0.1014     0.6014     0.7064     0.4021     0.3058         0.7227
+default_nofreeze_ls_adamw          0.8568         0.7602        0.6889      0.2161    0.1572     0.7506     0.6208     0.5979     0.3914         0.7708
+
+Recommendation
+--------------
+Best clinical candidate by mean validation AUC so far: default_nofreeze_ls_adamw (val_auc=0.8568, test_auc=0.7602, test_brier=0.2161, test_ece=0.1572).
+Best balanced candidate by specificity at 0.90 target sensitivity: default_nofreeze_ls_adamw (spec@0.90=0.5979, test_spec=0.6208, exam_auc=0.7708).

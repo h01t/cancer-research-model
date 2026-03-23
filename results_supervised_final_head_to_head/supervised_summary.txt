@@ -1,0 +1,29 @@
+Supervised Sweep Summary
+========================
+
+run_name                       config                        backbone        size  opt     ls     seed  val_auc  test_auc  sens     spec
+-----------------------------  ----------------------------  --------------  ----  ------  -----  ----  -------  --------  -------  -------
+default_nofreeze_ls_adam_seed45 default_nofreeze_ls_adam     efficientnet-b0  512  adam     0.10    45   0.8221    0.7024   0.7063   0.5963
+default_nofreeze_ls_adam_seed46 default_nofreeze_ls_adam     efficientnet-b0  512  adam     0.10    46   0.7411    0.7040   0.4476   0.8257
+default_nofreeze_ls_adam_seed47 default_nofreeze_ls_adam     efficientnet-b0  512  adam     0.10    47   0.8488    0.7504   0.6503   0.6972
+default_nofreeze_ls_adamw_seed45 default_nofreeze_ls_adamw    efficientnet-b0  512  adamw    0.10    45   0.8502    0.7901   0.8042   0.6239
+default_nofreeze_ls_adamw_seed46 default_nofreeze_ls_adamw    efficientnet-b0  512  adamw    0.10    46   0.8728    0.7518   0.7133   0.6284
+default_nofreeze_ls_adamw_seed47 default_nofreeze_ls_adamw    efficientnet-b0  512  adamw    0.10    47   0.8473    0.7386   0.7343   0.6101
+
+Grouped Means
+-------------
+config                        backbone        size  opt     ls     labeled  runs  mean_val_auc  mean_test_auc  mean_sens  mean_spec
+----------------------------  --------------  ----  ------  -----  -------  ----  ------------  -------------  ---------  ---------
+default_nofreeze_ls_adam     efficientnet-b0  512  adam     0.10      500     3        0.8040         0.7189     0.6014     0.7064
+default_nofreeze_ls_adamw    efficientnet-b0  512  adamw    0.10      500     3        0.8568         0.7602     0.7506     0.6208
+
+Candidate Comparison
+--------------------
+config                        mean_val_auc  mean_test_auc  mean_sens  mean_spec  opt     ls
+----------------------------  ------------  -------------  ---------  ---------  ------  -----
+default_nofreeze_ls_adamw          0.8568         0.7602     0.7506     0.6208  adamw    0.10
+default_nofreeze_ls_adam           0.8040         0.7189     0.6014     0.7064  adam     0.10
+
+Recommendation
+--------------
+Best grouped candidate so far: default_nofreeze_ls_adamw with efficientnet-b0 at 512px, adamw, label_smoothing=0.10, mean val AUC 0.8568.
