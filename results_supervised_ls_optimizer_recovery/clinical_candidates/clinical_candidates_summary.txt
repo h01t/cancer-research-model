@@ -1,0 +1,10 @@
+Clinical Candidate Summary
+==========================
+
+run_name                       config                        val_auc  test_auc  test_pr  brier    ece      sens     spec
+-----------------------------  ----------------------------  -------  --------  -------  -------  -------  -------  -------
+
+Grouped Means
+-------------
+config                        mean_val_auc  mean_test_auc  mean_test_pr  mean_brier  mean_ece  mean_sens  mean_spec  spec@0.90  spec@0.95  mean_exam_auc
+----------------------------  ------------  -------------  ------------  ----------  --------  ---------  ---------  ---------  ---------  -------------

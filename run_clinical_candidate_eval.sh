@@ -9,6 +9,7 @@ BOOTSTRAP_SAMPLES="200"
 DEVICE=""
 SKIP_COMPLETED=1
 CUSTOM_CONFIGS=0
+DRY_RUN=0
 CONFIGS=(
   "default_nofreeze_res512"
   "default_nofreeze_aug_safe"
@@ -29,6 +30,7 @@ Options:
   --device DEVICE          Optional device override
   --config NAME            Restrict evaluation to a specific config name
                            (repeatable; defaults to the promoted top 3 candidates)
+  --dry_run                Show which runs would be evaluated and exit
   --skip_completed         Skip runs with clinical_summary.yaml already present (default)
   --no-skip_completed      Re-run completed clinical bundles
   -h, --help               Show this help
@@ -61,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       CONFIGS+=("$2")
       shift 2
       ;;
+    --dry_run)
+      DRY_RUN=1
+      shift
+      ;;
     --skip_completed)
       SKIP_COMPLETED=1
       shift
@@ -81,8 +87,56 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+discover_configs() {
+  find "$RESULTS_DIR" -maxdepth 1 -mindepth 1 -type d -name '*_seed*' \
+    | sed 's#.*/##' \
+    | sed -E 's/_seed[0-9]+$//' \
+    | sort -u
+}
+
+if [[ "$CUSTOM_CONFIGS" -eq 0 ]]; then
+  DEFAULT_MATCHES=0
+  for config_name in "${CONFIGS[@]}"; do
+    for seed in "${SEEDS[@]}"; do
+      if [[ -d "$RESULTS_DIR/${config_name}_seed${seed}" ]]; then
+        DEFAULT_MATCHES=1
+        break 2
+      fi
+    done
+  done
+
+  if [[ "$DEFAULT_MATCHES" -eq 0 ]]; then
+    DISCOVERED_CONFIGS=()
+    while IFS= read -r discovered; do
+      if [[ -n "$discovered" ]]; then
+        DISCOVERED_CONFIGS+=("$discovered")
+      fi
+    done < <(discover_configs)
+    if [[ "${#DISCOVERED_CONFIGS[@]}" -gt 0 ]]; then
+      CONFIGS=("${DISCOVERED_CONFIGS[@]}")
+    fi
+  fi
+fi
+
 mkdir -p "$OUTPUT_DIR"
 LOG_FILE="$OUTPUT_DIR/clinical_eval.log"
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "Clinical evaluation configs:"
+  for config_name in "${CONFIGS[@]}"; do
+    echo "  $config_name"
+    for seed in "${SEEDS[@]}"; do
+      run_name="${config_name}_seed${seed}"
+      run_dir="$RESULTS_DIR/$run_name"
+      if [[ -d "$run_dir" ]]; then
+        echo "    [present] $run_name"
+      else
+        echo "    [missing] $run_name"
+      fi
+    done
+  done
+  exit 0
+fi
 
 for config_name in "${CONFIGS[@]}"; do
   for seed in "${SEEDS[@]}"; do
