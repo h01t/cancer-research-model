@@ -1,16 +1,19 @@
 # Mammography Classification Research
 
-Medical imaging research on CBIS-DDSM mammography classification. The project started as a supervised-vs-SSL comparison and currently moves forward with a corrected no-freeze supervised baseline, which outperformed the vanilla FixMatch and Mean Teacher setups tested here.
+Medical imaging research on CBIS-DDSM mammography classification. The project started as a supervised-vs-SSL comparison and has now converged on a supervised-first path: the current promoted baseline is `label_smoothing + adamw` on an EfficientNet-B0 512px pipeline, selected after baseline correction, supervised sweeps, and clinical-style follow-up evaluation.
 
 ## Current Status
 
-- Active path: `supervised_nofreeze` using `configs/default_nofreeze.yaml`
-- Historical research paths: FixMatch and Mean Teacher remain in the repo for reference, but they are not the recommended training workflow
-- Final chapter-close summaries live in `reports/ssl_closure_summary.txt`, `reports/ssl_closure_summary.csv`, and `reports/final_results.md`
+- Active path: `default_nofreeze_ls_adamw` using [`configs/default_nofreeze_ls_adamw.yaml`](/Users/grmim/Dev/ssl/configs/default_nofreeze_ls_adamw.yaml)
+- Current promoted task: 500-label supervised mammography classification with clinical-style evaluation and calibration follow-up
+- Historical research paths: frozen supervised, FixMatch, and Mean Teacher remain in the repo for reference, but they are no longer the recommended training workflow
+- Chapter-close and progress summaries live in [`reports/ssl_closure_summary.txt`](/Users/grmim/Dev/ssl/reports/ssl_closure_summary.txt), [`reports/final_results.md`](/Users/grmim/Dev/ssl/reports/final_results.md), and [`reports/current_progress_brief.md`](/Users/grmim/Dev/ssl/reports/current_progress_brief.md)
 
 ## Results
 
-Grouped mean validation AUC:
+### Phase 1: Closing The Vanilla SSL Chapter
+
+Grouped mean validation AUC on the initial comparison:
 
 | Method | 100 labels | 250 labels | 500 labels |
 |--------|------------|------------|------------|
@@ -19,14 +22,37 @@ Grouped mean validation AUC:
 | FixMatch | 0.6559 | 0.6788 | - |
 | Mean Teacher | 0.6325 | 0.6595 | 0.6861 |
 
-The key lesson is that the original supervised baseline was artificially weak because of the freeze behavior. Once corrected, supervised fine-tuning clearly outperformed the vanilla SSL methods explored in this repo. The next phase is stronger supervised experimentation, not more FixMatch/Mean Teacher tuning.
+The key lesson was that the original supervised baseline was artificially weak because of freeze behavior. Once corrected, supervised fine-tuning clearly outperformed the vanilla SSL methods explored in this repo.
+
+### Phase 2: Promoted Supervised Baseline
+
+After supervised-only sweeps over resolution, backbone, regularization, and optimizer, the current promoted baseline is:
+
+- `EfficientNet-B0`
+- `512x512`
+- `label_smoothing=0.1`
+- `AdamW`
+
+Combined 6-seed clinical-style summary (`42-47`) for `default_nofreeze_ls_adamw`:
+
+| Metric | Value |
+|--------|-------|
+| Mean validation ROC AUC | `0.8633` |
+| Mean test ROC AUC | `0.7589` |
+| Mean test PR AUC | `0.6748` |
+| Mean test sensitivity | `0.7110` |
+| Mean test specificity | `0.6651` |
+| Mean specificity at 0.90 target sensitivity | `0.5833` |
+| Mean exam-level ROC AUC | `0.7668` |
+
+`default_nofreeze_ls_adam` remained slightly better calibrated, but `adamw` won on validation AUC, test AUC, PR AUC, sensitivity, and fixed-sensitivity specificity. That made it the best overall decision-support candidate tested so far.
 
 ## Current Recommended Workflow
 
-1. Train with `scripts/train_supervised.py` and `configs/default_nofreeze.yaml`
-2. Use `run_nofreeze_baseline_sweep.sh` for multi-seed baseline runs
-3. Inspect training with TensorBoard and the notebooks in `notebooks/`
-4. Treat FixMatch/Mean Teacher scripts as archived research references
+1. Train with `scripts/train_supervised.py` and [`configs/default_nofreeze_ls_adamw.yaml`](/Users/grmim/Dev/ssl/configs/default_nofreeze_ls_adamw.yaml)
+2. Evaluate candidate runs with `scripts/clinical_eval.py` or `run_clinical_candidate_eval.sh`
+3. Inspect training with TensorBoard and the notebooks in [`notebooks/`](/Users/grmim/Dev/ssl/notebooks)
+4. Use historical SSL scripts only as archived research references
 
 ## Project Structure
 
@@ -78,15 +104,18 @@ data/
 
 ```bash
 python scripts/train_supervised.py \
-  --config configs/default_nofreeze.yaml \
-  --labeled_subset 100 \
-  --output_dir results/supervised_nofreeze_100
+  --config configs/default_nofreeze_ls_adamw.yaml \
+  --labeled_subset 500 \
+  --output_dir results/default_nofreeze_ls_adamw_500_seed42 \
+  --seed 42
 ```
 
-### 5. Run The Official Multi-Seed Baseline Sweep
+### 5. Run Clinical-Style Evaluation On A Trained Run
 
 ```bash
-./run_nofreeze_baseline_sweep.sh
+python scripts/clinical_eval.py \
+  --run_dir results/default_nofreeze_ls_adamw_500_seed42 \
+  --output_dir results/default_nofreeze_ls_adamw_500_seed42/clinical_eval
 ```
 
 ### 6. Analyze
@@ -103,20 +132,23 @@ Use the notebooks in [`notebooks/`](/Users/grmim/Dev/ssl/notebooks) for:
 
 ## Configs
 
-- `configs/default_nofreeze.yaml`: official supervised baseline
+- `configs/default_nofreeze_ls_adamw.yaml`: current official supervised baseline
+- `configs/default_nofreeze_ls_adam.yaml`: calibration-oriented comparison baseline
+- `configs/default_nofreeze.yaml`: earlier no-freeze supervised baseline
 - `configs/default.yaml`: historical frozen supervised baseline for comparison
 - `configs/fixmatch.yaml`: archived FixMatch research config
 - `configs/mean_teacher.yaml`: archived Mean Teacher research config
 - `configs/test.yaml`: quick smoke-test config
 
-## Historical SSL Notes
+## Current Research Direction
 
-The SSL codepaths are intentionally preserved for reproducibility and comparison, but they are not the main training recommendation anymore. The repo’s current research direction is:
+The SSL codepaths are intentionally preserved for reproducibility and comparison, but they are not the main training recommendation anymore. The active roadmap is:
 
-- stronger supervised tuning
-- pretraining / representation learning
-- resolution and cropping experiments
-- calibration and thresholding refinement
+- calibration for the promoted `adamw` baseline
+- false-positive / false-negative review and subgroup analysis
+- exam-level and multi-view modeling
+- external validation on additional mammography datasets
+- traceable, clinical-style evidence packaging for future decision-support work
 
 ## TensorBoard
 
