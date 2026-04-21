@@ -81,7 +81,7 @@ flowchart LR
     end
     
     subgraph Strong Augmentation
-        U_Batch --> U_Strong[(RandAugment) Strongly Augmented]
+        U_Batch --> U_Strong["(RandAugment) Strongly Augmented"]
         U_Strong --> M2[Model]
         M2 --> P[Predictions]
     end
