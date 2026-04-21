@@ -1,8 +1,7 @@
-import os
 import logging
+import os
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset, Subset

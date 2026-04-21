@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import textwrap
+from pathlib import Path
 
 import nbformat
 from nbformat.v4 import new_code_cell, new_markdown_cell, new_notebook
-
 
 TITLE = "Research Retrospective: From SSL Exploration to the Current Supervised Baseline"
 OUTPUT_PATH = Path("notebooks/05_research_retrospective.ipynb")

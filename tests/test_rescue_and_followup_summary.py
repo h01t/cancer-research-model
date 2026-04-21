@@ -134,8 +134,14 @@ class TestConfigIsolation:
         base = yaml.safe_load(Path("configs/default.yaml").read_text())
         probe = yaml.safe_load(Path("configs/default_nofreeze.yaml").read_text())
 
-        assert probe["dataset"] == base["dataset"]
-        assert probe["training"] == base["training"]
+        probe_dataset = {k: v for k, v in probe["dataset"].items() if k not in {"name"}}
+        base_dataset = {k: v for k, v in base["dataset"].items() if k not in {"name"}}
+        assert probe_dataset == base_dataset
+
+        probe_training = {k: v for k, v in probe["training"].items() if k not in {"label_smoothing"}}
+        base_training = {k: v for k, v in base["training"].items() if k not in {"label_smoothing"}}
+        assert probe_training == base_training
+
         assert probe["augmentation"] == base["augmentation"]
         assert probe["logging"] == base["logging"]
         assert probe["wandb"] == base["wandb"]

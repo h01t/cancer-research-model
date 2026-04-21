@@ -14,12 +14,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import yaml
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from .metrics import compute_metrics
-from .metrics import find_best_threshold
+from .metrics import compute_metrics, find_best_threshold
 
 logger = logging.getLogger(__name__)
 

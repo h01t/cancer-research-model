@@ -2,8 +2,9 @@ import sys
 
 sys.path.insert(0, ".")
 
-from src.data.dataset import CBISDDSMDataset
 from torchvision import transforms
+
+from src.data.dataset import CBISDDSMDataset
 
 # Test loading training mass dataset
 print("Testing dataset loading...")

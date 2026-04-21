@@ -9,7 +9,13 @@ from .ssl_dataset import (
     TeacherStudentUnlabeledDataset,
     TransformSubset,
 )
-from .transforms import EvalTransforms, MildStrongAugmentation, StrongAugmentation, WeakAugmentation, get_transforms
+from .transforms import (
+    EvalTransforms,
+    MildStrongAugmentation,
+    StrongAugmentation,
+    WeakAugmentation,
+    get_transforms,
+)
 
 __all__ = [
     "CBISDDSMDataset",

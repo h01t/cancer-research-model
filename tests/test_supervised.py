@@ -8,11 +8,9 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from src.data.transforms import get_transforms
 from src.models.efficientnet import EfficientNetClassifier
 from src.training.trainer import BaseTrainer, get_device
 from tests.conftest import SyntheticDataset

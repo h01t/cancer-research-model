@@ -1,5 +1,7 @@
 # Mammography Classification Research
 
+> **Note**: This repository contains code for an academic master's research project and is provided for educational and review purposes.
+
 Medical imaging research on CBIS-DDSM mammography classification. The project started as a supervised-vs-SSL comparison and has now converged on a supervised-first path: the current promoted baseline is `label_smoothing + adamw` on an EfficientNet-B0 512px pipeline, selected after baseline correction, supervised sweeps, and clinical-style follow-up evaluation.
 
 ## Current Status

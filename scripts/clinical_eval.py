@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 import pandas as pd
 import yaml
@@ -30,7 +30,6 @@ from src.training.metrics import (
     threshold_for_target_sensitivity,
     threshold_table,
 )
-
 
 SEED_SUFFIX_PATTERN = re.compile(r"_seed\d+$")
 

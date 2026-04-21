@@ -158,8 +158,9 @@ class MeanTeacherTrainer(BaseTrainer):
         epoch_sup_loss = total_sup_loss / max(num_batches, 1)
         epoch_consistency_loss = total_consistency_loss / max(num_batches, 1)
 
-        from .metrics import compute_metrics
         import numpy as np
+
+        from .metrics import compute_metrics
 
         metrics = compute_metrics(np.array(all_labels), np.array(all_preds), np.array(all_probs))
         metrics.update(

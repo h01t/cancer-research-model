@@ -5,7 +5,6 @@ The EMA model maintains a smoothed copy of the student model's weights.
 It produces more stable predictions for pseudo-label generation.
 """
 
-import copy
 import logging
 
 import torch

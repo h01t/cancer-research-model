@@ -4,7 +4,6 @@ Tests for dataset utilities (patient-aware splitting, class-balanced sampling).
 All tests use mock data — no CBIS-DDSM dataset required.
 """
 
-import pytest
 import pandas as pd
 from torch.utils.data import Subset
 
@@ -97,7 +96,6 @@ class TestPatientAwareSplit:
         ds = self._make_dataset()
         train_idx, val_idx = patient_aware_split(ds, val_fraction=0.3, seed=42)
 
-        total_patients = len(set(ds.patient_ids))
         val_patients = len({ds.patient_ids[i] for i in val_idx})
 
         # With 6 patients and 0.3, expect ~2 val patients (0.3*4 benign ≈1, 0.3*2 mal ≈1)
@@ -120,8 +118,6 @@ class TestPatientAwareSplit:
 
         # With small data, it's possible to get the same split by chance,
         # but extremely unlikely
-        val_patients_1 = {ds.patient_ids[i] for i in val1}
-        val_patients_2 = {ds.patient_ids[i] for i in val2}
         # At minimum the ordering should differ if patients are the same
         assert val1 != val2 or train1 != train2
 

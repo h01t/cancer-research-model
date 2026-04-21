@@ -3,7 +3,6 @@ Tests for classification metrics, including edge cases.
 """
 
 import numpy as np
-import pytest
 
 from src.training.metrics import (
     aggregate_group_predictions,

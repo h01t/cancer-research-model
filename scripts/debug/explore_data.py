@@ -1,6 +1,5 @@
 import csv
 import os
-import sys
 
 
 def explore_csv(filepath):

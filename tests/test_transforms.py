@@ -7,9 +7,9 @@ import torch
 from PIL import Image
 
 from src.data.transforms import (
-    StrongAugmentation,
     EvalTransforms,
     MildStrongAugmentation,
+    StrongAugmentation,
     WeakAugmentation,
     get_transforms,
 )

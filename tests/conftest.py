@@ -130,8 +130,8 @@ class SyntheticDataset(torch.utils.data.Dataset):
 
     def get_class_counts(self):
         return {
-            "benign": sum(1 for l in self.labels if l == 0),
-            "malignant": sum(1 for l in self.labels if l == 1),
+            "benign": sum(1 for label in self.labels if label == 0),
+            "malignant": sum(1 for label in self.labels if label == 1),
         }
 
     def get_metadata_frame(self):

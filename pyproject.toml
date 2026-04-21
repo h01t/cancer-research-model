@@ -1,9 +1,12 @@
 [project]
 name = "ssl-mammography"
 version = "0.4.0"
-description = "Semi-supervised learning for breast cancer detection on CBIS-DDSM"
+description = "Semi-supervised learning for breast cancer detection on CBIS-DDSM (Academic Research Project)"
 readme = "README.md"
 license = {text = "MIT"}
+authors = [
+    {name = "Ognjen Jovanovic"}
+]
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.0.0",

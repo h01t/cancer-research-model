@@ -5,12 +5,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-from pathlib import Path
 import re
+from pathlib import Path
 
 import pandas as pd
 import yaml
-
 
 METHOD_PATTERN = re.compile(
     r"^(?P<method>supervised_nofreeze|supervised|fixmatch_static|fixmatch_legacy_aug|fixmatch|mean_teacher)"
